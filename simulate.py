@@ -92,6 +92,7 @@ def simulate(effects: Effects, slopes: Slopes, var: Variance):
         return slopes_df
 
 
+
     if need_groups:
         groups_list, groups_mat = sim_groups()
         print("GROUPS:\n", groups_list)
