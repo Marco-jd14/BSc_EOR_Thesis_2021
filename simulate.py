@@ -6,38 +6,125 @@ Created on Fri Apr  9 10:58:46 2021
 """
 import pandas as pd
 import numpy as np
+import enum
+# import random
+
+class Effects(enum.Enum):
+    none = 0
+    ind_rand = 1
+    ind_fix = 2
+    gr_tvar_fix = 3
+    both_fix = 4
+
+class Slopes(enum.Enum):
+    homog = 0
+    heterog = 1
+
+class Variance(enum.Enum):
+    homosk = 0
+    heterosk = 1
 
 K = 0
 
-def simulate():
+def simulate(effects: Effects, slopes: Slopes, var: Variance):
+    # print(effects)
     T = 23  #number of timepoints
     N = 50  #number of individuals
     global K
-    K = 2   #number of explanatory variables
+    K = 1   #number of explanatory variables
+    G = 7
+    need_groups = (effects == Effects.gr_tvar_fix or effects == Effects.both_fix or slopes == Slopes.heterog)
 
-    G = np.ones((1,T))
-    indiv_fixed_effects = np.random.uniform(0, 50, size=(N,1))
-    # indiv_fixed_effects = np.random.normal(0, 50/2, size=(N,1))
+    def sim_groups():
+        individuals = np.arange(N)
+        np.random.shuffle(individuals)
+
+        group_sizes = np.zeros(G, dtype=int)
+        for g in range(G):
+            if g == G-1:
+                group_size = N - np.sum(group_sizes)
+            else:
+                group_size = int(np.round(np.random.uniform(0.75*N/G, 1.25*N/G), 0))
+            group_sizes[g] = group_size
+
+        groups_list = [[] for g in range(G)]
+        for g in range(G):
+            for i in range(group_sizes[g]):
+                groups_list[g].append(individuals[ np.sum(group_sizes[:g]) + i ])
+
+        groups_mat = np.zeros((G,N), dtype=int)
+        for g in range(G):
+            groups_mat[g, groups_list[g]] = 1
+
+        return groups_list, groups_mat
+
+
+    def sim_effects() -> pd.DataFrame:
+        if effects == Effects.none:
+            effects_m = np.zeros((N,T))
+
+        elif effects == Effects.ind_rand:
+            effects_m = np.random.normal(0, 50/2, size=(N,1)) @ np.ones((1,T))
+
+        elif effects == Effects.ind_fix:
+            effects_m = np.random.uniform(0, 50, size=(N,1)) @ np.ones((1,T))
+
+        elif effects == Effects.gr_tvar_fix:
+            group_effects = np.random.uniform(0, 50, size=(G,T))
+            effects_m = groups_mat.T @ group_effects
+
+        elif effects == Effects.both_fix:
+            indiv_fix_eff = np.random.uniform(0, 50, size=(N,1)) @ np.ones((1,T))
+            group_fix_eff = np.random.uniform(0, 50, size=(G,T))
+            effects_m = groups_mat.T @ group_fix_eff + indiv_fix_eff
+
+        effects_df = pd.DataFrame(effects_m, columns=['t=%d'%i for i in range(T)], index=['n=%d'%i for i in range(N)])
+        return effects_df
+
+
+    def sim_slopes():
+        # if slopes == Slopes.homog:
+        #     B = np.random.uniform(0.5,3, size=(K,G))
+        # elif slopes == Slopes.heterog:
+        B = np.random.uniform(0.5,5, size=(K,G))
+
+        slopes_df = pd.DataFrame(B, columns=['g=%d'%i for i in range(G)], index=['k=%d'%i for i in range(K)])
+        return slopes_df
+
+
+    if need_groups:
+        groups_list, groups_mat = sim_groups()
+        print("GROUPS:\n", groups_list)
+    else: 
+        G = 1
+        groups_list = np.arange(N)
+
+    effects_df = sim_effects()
 
     X_range = [10, 40]
     X = np.random.uniform(X_range[0], X_range[1], size=(N, T, K))
-    X[:,:,0] += (indiv_fixed_effects @ G)
+    if effects != Effects.ind_rand:
+        X[:,:,0] += effects_df.values       #create correlation between regressor and ommitted variable (fixed effects)
 
     # print(pd.DataFrame(np.hstack((indiv_fixed_effects,X[:,:,0]))).corr())
 
+    slopes_df = sim_slopes()
+    if not need_groups:
+        Y = X @ slopes_df.values.reshape(K)
+    else:
+        temp = X @ slopes_df.values
+        Y = np.zeros((N,T))
+        for g in range(G):
+            Y += temp[:,:,g] * groups_mat.T[:,g].reshape(N,1)
 
-    B = np.random.uniform(0.5,3, size=(K))
+    Y += effects_df.values
 
-    Y = X @ B
-    Y += indiv_fixed_effects.reshape(N,1) @ G
-
-    """
-    heterosk = (X[:,:,0]/np.mean(X[:,:,0]))#/np.sqrt(K)
-    corr = heterosk
-    """
-    homosk = np.ones((N,T))*3
-    corr = homosk
-    #"""
+    if var == Variance.heterosk:
+        heterosk = (X[:,:,0]/np.mean(X[:,:,0])) #/np.sqrt(K)
+        corr = heterosk
+    elif var == Variance.homosk:
+        homosk = np.ones((N,T))*3
+        corr = homosk
 
     errors = np.random.normal(0, np.sqrt(np.mean(Y))*corr)
     Y += errors
@@ -46,14 +133,14 @@ def simulate():
     features = ['feature%d'%i for i in range(K)]
     dataset = pd.DataFrame(np.hstack((Y.reshape(N*T,1), X.reshape(N*T,K))), columns=['y'] + features, index=index)
 
-    fixed_effects = pd.DataFrame(indiv_fixed_effects)
 
-    return dataset, fixed_effects, B
+    return dataset, effects_df, slopes_df, groups_list
 
 
-np.random.seed(0)
-dataset, fixed_effects, true_coef = simulate()
-print("True coefficients:", true_coef, '\n')
+# np.random.seed(0)
+
+dataset, effects_df, slopes_df, groups_list = simulate(Effects.ind_fix, Slopes.homog, Variance.homosk)
+print("TRUE COEFFICIENTS:\n", slopes_df, '\n')
 # print('\n')
 
 # dataset = pd.read_csv('guns.csv', usecols = ['n', 't', 'feature0', 'y'], index_col = ['n', 't'])
@@ -154,3 +241,6 @@ print('\n')
 print('chi-Squared: ' + str(hausman_results[0]))
 print('degrees of freedom: ' + str(hausman_results[1]))
 print('p-Value: ' + str(hausman_results[2]))
+
+
+print("\n\nTRUE COEFFICIENTS:\n", slopes_df)
