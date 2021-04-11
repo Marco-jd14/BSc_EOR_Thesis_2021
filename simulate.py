@@ -26,7 +26,7 @@ class Variance(enum.Enum):
 
 
 class Dataset:
-    def __init__(self, N: int, T: int, K: int, G=1):
+    def __init__(self, N: int, T: int, K: int, G: int=1):
         self.N = N
         self.T = T
         self.K = K

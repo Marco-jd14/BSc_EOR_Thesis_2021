@@ -10,10 +10,8 @@ import enum
 
 from simulate import Effects, Slopes, Variance, Dataset
 
-#TODO: constant / intercept
-
 np.random.seed(0)
-dataset = Dataset(N=200, T=9, K=1, G=10)
+dataset = Dataset(N=200, T=9, K=1)
 dataset.simulate(Effects.ind_fix, Slopes.homog, Variance.homosk)
 
 
