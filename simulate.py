@@ -33,6 +33,25 @@ class Dataset:
         self.G = G
 
 
+    def reset(self, N: int=0, T: int=0, K: int=0, G: int=0):
+        if N==0:
+            N = self.N
+        if T==0:
+            T = self.T
+        if K==0:
+            K = self.K
+        if G==0:
+            G = self.G
+
+        for attr in list(vars(self).keys()):
+            delattr(self, attr)
+
+        self.N = N
+        self.T = T
+        self.K = K
+        self.G = G
+
+
     def sim_groups(self):
         individuals = np.arange(self.N)
         np.random.shuffle(individuals)
@@ -92,10 +111,7 @@ class Dataset:
 
 
     def simulate(self, effects: Effects, slopes: Slopes, var: Variance):
-        if hasattr(self, 'groups_list'):
-            delattr(self, 'groups_list')
-        if hasattr(self, 'groups_mat'):
-            delattr(self, 'groups_mat')
+        self.reset()
 
         self.effects = effects
         self.slopes = slopes
