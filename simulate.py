@@ -103,8 +103,9 @@ class Dataset:
             B = np.random.uniform(0.5,3, size=(self.K, 1))
             col = ['g=%d'%i for i in range(1)]
         elif self.slopes == Slopes.heterog:
-            B = np.random.uniform(0.5,5, size=(self.K, self.G))
+            B = np.random.uniform(0.5,self.G+np.sqrt(self.G), size=(self.K, self.G))
             col = ['g=%d'%i for i in range(self.G)]
+            B = np.sort(B, axis=1)
 
         row = ['k=%d'%i for i in range(self.K)]
         self.slopes_df = pd.DataFrame(B, columns=col, index=row)
@@ -127,8 +128,9 @@ class Dataset:
 
         X_range = [10, 40]
         X = np.random.uniform(X_range[0], X_range[1], size=(self.N, self.T, self.K))
-        if self.effects != Effects.ind_rand:
-            X[:,:,0] += self.effects_df.values       #create correlation between regressor and ommitted variable (fixed effects)
+        #TODO: fix correlation
+        # if self.effects == Effects.ind_fix:
+        #     X[:,:,0] += self.effects_df.values       #create correlation between regressor and ommitted variable (fixed effects)
 
         # print(pd.DataFrame(np.hstack((indiv_fixed_effects,X[:,:,0]))).corr())
 
