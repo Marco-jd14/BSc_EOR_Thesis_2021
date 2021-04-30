@@ -141,12 +141,16 @@ class GFE:
         if self.slopes == Slopes.heterog:
             self.theta = np.sort(self.theta, axis=1)
 
+        col = ['g=%d'%i for i in range(self.G)]
+        row = ['k=%d'%i for i in range(self.K)]
+        self.theta = pd.DataFrame(self.theta, columns=col, index=row)
+
 
 
 np.random.seed(0)
-N = 250
+N = 500
 T = 10
-K = 6
+K = 1
 
 
 TrackTime("Simulate")
@@ -165,6 +169,30 @@ gfe.estimate_G(dataset.G)
 gfe.fit(x, y)
 
 
+def group_similarity(true_groups, est_groups):
+    best_groups = np.zeros((G, 3))
+    best_groups[:,0] = np.Inf
+
+    for i in range(len(true_groups)):
+        true_group = set(true_groups[i])
+
+        for j in range(len(est_groups)):
+            est_group = set(est_groups[j])
+            difference1 = len(true_group - est_group)
+            difference2 = len(est_group - true_group)
+
+            if difference1 + difference2 < best_groups[i,0] + best_groups[i,1]:
+                best_groups[i,0] = difference1
+                best_groups[i,1] = difference2
+                best_groups[i,2] = j
+
+    for i in range(len(true_groups)):
+        print("TRUE GROUP")
+        print(true_groups[i])
+        print("ESTIMATED GROUP")
+        print(est_groups[int(best_groups[i,2])])
+        print("INTERSECTION:", len(set(true_groups[i]).intersection(set(est_groups[int(best_groups[i,2])]))))
+        print("")
 
 TrackTime("Estimate")
 
@@ -178,13 +206,17 @@ print("TOOK %s ITERATIONS\n"%gfe.nr_iterations)
 print("TRUE COEFFICIENTS:")
 print(dataset.slopes_df)
 # print(dataset.effects_df)
-# print(dataset.groups_list)
+# for group in dataset.groups_list:
+#     print(group)
 
 print("\n\nESTIMATED COEFFICIENTS:")
 print(gfe.theta)
-# print(alpha)
+# print(gfe.alpha)
 # print(groups_list)
+# for group in groups_list:
+#     print(group)
 
+group_similarity(dataset.groups_list, groups_list)
 
 
 if gfe.slopes == Slopes.homog:
