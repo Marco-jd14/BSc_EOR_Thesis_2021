@@ -71,6 +71,7 @@ class Dataset:
 
         self.groups_mat = np.zeros((self.G, self.N), dtype=int)
         for g in range(self.G):
+            self.groups_list[g][:] = np.sort(self.groups_list[g])
             self.groups_mat[g, self.groups_list[g]] = 1
 
 
