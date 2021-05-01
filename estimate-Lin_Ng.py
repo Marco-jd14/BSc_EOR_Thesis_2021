@@ -12,85 +12,112 @@ from scipy.linalg import lstsq
 from simulate import Effects, Slopes, Variance, Dataset
 from lib.tracktime import TrackTime, TrackReport
 
+class PSEUDO:
+    def __init__(self):
+        pass
+
+
+    def _cluster_regressor(self, k, q_hat):
+        gamma_range = np.zeros(N-1-2*(self.min_group_size-1))
+        q_hat_sorted = np.sort(q_hat)
+
+        for i in range(len(gamma_range)):
+            gamma_range[i] = (q_hat_sorted[self.min_group_size-1+i] + q_hat_sorted[self.min_group_size+i])/2
+
+        for gamma in gamma_range:
+            ssr = self._ssr(gamma, q_hat)
+            TrackTime("Calc gamma_star")
+            if ssr < self.gamma_star[0]:
+                self.gamma_star[0] = ssr
+                self.gamma_star[1] = gamma
+                self.gamma_star[2] = k
+
+
+    def _ssr(self, gamma, q_hat):
+        TrackTime("gamma SSR")
+        partition = [np.arange(self.N)[q_hat <= gamma].reshape(1,-1)[0], np.arange(self.N)[q_hat > gamma].reshape(1,-1)[0]]
+
+        TrackTime("SSR selection")
+        x1 = self.X.loc[partition[0],:]
+        x2 = self.X.loc[partition[1],:]
+        y1 = self.Y.loc[partition[0],:]
+        y2 = self.Y.loc[partition[1],:]
+
+        TrackTime("gamma SSR")
+        beta_hat_1, _, _, _ = lstsq(x1, y1)
+        beta_hat_2, _, _, _ = lstsq(x2, y2)
+
+        residuals1 = (y1 - x1 @ beta_hat_1).values
+        residuals2 = (y2 - x2 @ beta_hat_2).values
+
+        return residuals1@residuals1.T + residuals2@residuals2.T
+
+
+    def estimate_G(self, G):
+        self.G = G
+
+    def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
+        #demean data:
+        self.X = X - X.groupby('n').mean()
+        self.Y = Y - Y.groupby('n').mean()
+
+        self.N = len(set(self.X.index.get_level_values(0)))
+        self.T = len(set(self.X.index.get_level_values(1)))
+        self.K = len(self.X.columns)
+
+
+        q_hat = np.zeros((self.N,self.K))
+        for i in range(self.N):
+            q_hat[i,:], _, _, _ = lstsq(self.X.loc[i,:], self.Y.loc[i,:])
+
+
+        self.min_group_size = 10
+
+        self.gamma_star = [np.Inf, 0, 0]
+        TrackTime("Calc gamma_star")
+        for k in range(self.K):
+            self._cluster_regressor(k, q_hat[:,k])
+
+        TrackTime("Calc beta_hat")
+        gamma = self.gamma_star[1]
+        k = self.gamma_star[2]
+        partition = [np.arange(self.N)[q_hat[:,k] <= gamma].reshape(1,-1)[0], np.arange(self.N)[q_hat[:,k] > gamma].reshape(1,-1)[0]]
+
+        x1 = self.X.loc[partition[0],:]
+        x2 = self.X.loc[partition[1],:]
+        y1 = self.Y.loc[partition[0],:]
+        y2 = self.Y.loc[partition[1],:]
+
+        beta_hat_1, _, _, _ = lstsq(x1, y1)
+        beta_hat_2, _, _, _ = lstsq(x2, y2)
+
+        col = ['g=%d'%i for i in range(self.G)]
+        row = ['k=%d'%i for i in range(self.K)]
+        self.beta = pd.DataFrame(np.vstack([beta_hat_1, beta_hat_2]).T, columns=col, index=row)
+
+
+
 np.random.seed(0)
 N = 100
 T = 100
-K = 4
+K = 2
 
 TrackTime("Simulate")
 dataset = Dataset(N, T, K, G=2)
 dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
-#TODO: Lin and Ng estimation
+#TODO: Lin and Ng estimation for G>2 groups
 TrackTime("Estimate")
 G = dataset.G   #assume true value of G is known
 
 x = dataset.data.drop(["y"], axis=1)
 y = dataset.data["y"]
 
-x = x - x.groupby('n').mean()
-y = y - y.groupby('n').mean()
 
-# print(np.all(np.abs(x.groupby('n').mean()) < 10**-10))
-# print(np.all(np.abs(y.groupby('n').mean()) < 10**-10))
+pseudo = PSEUDO()
+pseudo.estimate_G(dataset.G)
+pseudo.fit(x,y)
 
-
-TrackTime("Calc q_hat")
-q_hat = np.zeros((N,K))
-for i in range(N):
-    q_hat[i,:], _, _, _ = lstsq(x.loc[i,:], y.loc[i,:])
-
-
-def squared_residuals(gamma, q_hat, k):
-    partition = [np.arange(N)[q_hat[:,k] <= gamma].reshape(1,-1)[0], np.arange(N)[q_hat[:,k] > gamma].reshape(1,-1)[0]]
-
-    x1 = x.loc[partition[0],:]
-    x2 = x.loc[partition[1],:]
-    y1 = y.loc[partition[0],:]
-    y2 = y.loc[partition[1],:]
-
-    beta_hat_1, _, _, _ = lstsq(x1, y1)
-    beta_hat_2, _, _, _ = lstsq(x2, y2)
-
-    residuals1 = (y1 - x1 @ beta_hat_1).values
-    residuals2 = (y2 - x2 @ beta_hat_2).values
-
-    return residuals1@residuals1.T + residuals2@residuals2.T
-
-TrackTime("Prepare")
-min_group_size = 10
-
-gamma_range = np.zeros(N-1-2*(min_group_size-1))
-
-gamma_star = [np.Inf, 0, 0]
-for k in range(K):
-
-    q_hat_sorted = np.sort(q_hat[:,k])
-    
-    for i in range(len(gamma_range)):
-        gamma_range[i] = (q_hat_sorted[min_group_size-1+i] + q_hat_sorted[min_group_size+i])/2
-    
-    TrackTime("Calc gamma_star")
-    # gamma_star = [np.Inf, 0]
-    for gamma in gamma_range:
-        ssr = squared_residuals(gamma, q_hat, k)
-        if ssr < gamma_star[0]:
-            gamma_star[0] = ssr
-            gamma_star[1] = gamma
-            gamma_star[2] = k
-
-print(gamma_star)
-TrackTime("Calc beta_hat")
-gamma = gamma_star[1]
-partition = [np.arange(N)[q_hat[:,k] <= gamma].reshape(1,-1)[0], np.arange(N)[q_hat[:,k] > gamma].reshape(1,-1)[0]]
-
-x1 = x.loc[partition[0],:]
-x2 = x.loc[partition[1],:]
-y1 = y.loc[partition[0],:]
-y2 = y.loc[partition[1],:]
-
-beta_hat_1, _, _, _ = lstsq(x1, y1)
-beta_hat_2, _, _, _ = lstsq(x2, y2)
 
 
 
@@ -100,8 +127,7 @@ print("TRUE COEFFICIENTS:")
 print(dataset.slopes_df)
 
 print("\n\nESTIMATED COEFFICIENTS:")
-print(beta_hat_1)
-print(beta_hat_2)
+print(pseudo.beta)
 
 
 print("\n")
