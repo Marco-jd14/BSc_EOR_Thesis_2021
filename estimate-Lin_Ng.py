@@ -17,8 +17,8 @@ class PSEUDO:
         pass
 
 
-    def _cluster_regressor(self, k, q_hat, left_n):
-        gamma_star = [np.Inf, np.Inf, 0, 0]
+    def _cluster_regressor(self, q_hat, left_n):
+        gamma_star = [np.Inf, np.Inf, 0]
         #TODO: check if enough individuals w.r.t min_group_size
         gamma_range = np.zeros(len(q_hat)-1-2*(self.min_group_size-1))
         q_hat_sorted = np.sort(q_hat)
@@ -33,7 +33,6 @@ class PSEUDO:
                 gamma_star[0] = ssr_left
                 gamma_star[1] = ssr_right
                 gamma_star[2] = gamma
-                gamma_star[3] = k
 
         return gamma_star
 
@@ -110,24 +109,21 @@ class PSEUDO:
         self.N = len(set(self.X.index.get_level_values(0)))
         self.T = len(set(self.X.index.get_level_values(1)))
         self.K = len(self.X.columns)
+        self.min_group_size = 10
 
         q_hat = np.zeros((self.N,self.K))
         for i in range(self.N):
             select = np.arange(i*self.T,(i+1)*self.T)
             q_hat[i,:], _, _, _ = lstsq(self.X.values[select], self.Y.values[select])
 
-        self.min_group_size = 10
         gamma_stars = [[] for i in range(self.K)]
-
         for k in range(self.K):
             q_hat_k = q_hat[:,k]
+
             for i in range(int(np.ceil(np.log2(self.G)))):
                 if i==0:
-                    gamma_star = self._cluster_regressor(k, q_hat_k, 0)
+                    gamma_star = self._cluster_regressor(q_hat_k, 0)
                     gamma_stars[k].append(gamma_star)
-                elif 2**(i+1) > self.G:
-                    #TODO: select groups
-                    print("HELLO")
                 else:
                     left_n = 0
                     new_gammas = []
@@ -139,15 +135,19 @@ class PSEUDO:
                         else:
                             rel_q_hat = q_hat_k[np.all([q_hat_k > gamma_stars[k][j-1][2], q_hat_k <= gamma_stars[k][j][2]],axis=0)]
 
-                        gamma_star = self._cluster_regressor(k, rel_q_hat, left_n)
+                        gamma_star = self._cluster_regressor(rel_q_hat, left_n)
                         new_gammas.append(gamma_star)
                         left_n += len(rel_q_hat)
 
-                    for j in range(len(gamma_stars[k])):
-                        gamma_stars[k][j][0] = 0
-                        gamma_stars[k][j][1] = 0
-                    for j in range(len(gamma_stars[k])+1):
-                        gamma_stars[k].insert(2*j,new_gammas[j])
+                    if 2**(i+1) > self.G:
+                        #TODO: select groups
+                        print("HELLO")
+                    else:
+                        for j in range(len(gamma_stars[k])):
+                            gamma_stars[k][j][0] = 0
+                            gamma_stars[k][j][1] = 0
+                        for j in range(len(gamma_stars[k])+1):
+                            gamma_stars[k].insert(2*j,new_gammas[j])
 
         k_star = self._calc_k_star(gamma_stars)
 
