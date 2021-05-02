@@ -19,7 +19,7 @@ class PSEUDO:
 
     def _cluster_regressor(self, q_hat, left_n):
         gamma_star = [np.Inf, np.Inf, 0]
-        #TODO: check if enough individuals w.r.t min_group_size
+        #TODO: check if enough individuals w.r.t min_group_size (only in case of possibility of discard? )
         gamma_range = np.zeros(len(q_hat)-1-2*(self.min_group_size-1))
         q_hat_sorted = np.sort(q_hat)
 
@@ -28,7 +28,7 @@ class PSEUDO:
 
         for gamma in gamma_range:
             ssr_left, ssr_right = self._ssr(gamma, q_hat, left_n)
-            TrackTime("Calc gamma_star")
+            TrackTime("Estimate")
             if ssr_left + ssr_right < gamma_star[0] + gamma_star[1]:
                 gamma_star[0] = ssr_left
                 gamma_star[1] = ssr_right
@@ -38,10 +38,9 @@ class PSEUDO:
 
 
     def _ssr(self, gamma, q_hat, left_n):
-        TrackTime("Partition indices1")
         partition = [np.arange(len(q_hat))[q_hat <= gamma]+left_n, np.arange(len(q_hat))[q_hat > gamma]+left_n]
 
-        TrackTime("Partition indices2")
+        TrackTime("Partition indices")
         partition_indices = [np.zeros(len(partition[0])*self.T,dtype=int), np.zeros(len(partition[1])*self.T, dtype=int)]
         for k in range(2):
             for i in range(len(partition[k])):
@@ -89,6 +88,9 @@ class PSEUDO:
             else:
                 selection = np.arange(self.N)[np.all([q_hat > gamma_star[i-1][2], q_hat <= gamma_star[i][2]],axis=0)]
 
+            #TODO: make a groups_list
+            #TODO: estimate individual fixed effects?
+
             x_sel = self.X.loc[selection,:]
             y_sel = self.Y.loc[selection,:]
             betas[:,i], _, _, _ = lstsq(x_sel, y_sel)
@@ -109,7 +111,7 @@ class PSEUDO:
         self.N = len(set(self.X.index.get_level_values(0)))
         self.T = len(set(self.X.index.get_level_values(1)))
         self.K = len(self.X.columns)
-        self.min_group_size = 10
+        self.min_group_size = 5
 
         q_hat = np.zeros((self.N,self.K))
         for i in range(self.N):
@@ -143,11 +145,11 @@ class PSEUDO:
                         #TODO: select groups
                         print("HELLO")
                     else:
-                        for j in range(len(gamma_stars[k])):
+                        for j in range( len(gamma_stars[k]) ):
                             gamma_stars[k][j][0] = 0
                             gamma_stars[k][j][1] = 0
-                        for j in range(len(gamma_stars[k])+1):
-                            gamma_stars[k].insert(2*j,new_gammas[j])
+                        for j in range( len(gamma_stars[k])+1 ):
+                            gamma_stars[k].insert(2*j, new_gammas[j])
 
         k_star = self._calc_k_star(gamma_stars)
 
@@ -163,32 +165,30 @@ N = 100
 T = 250
 K = 3
 
+
 TrackTime("Simulate")
-dataset = Dataset(N, T, K, G=2)
+dataset = Dataset(N, T, K, G=7)
 dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
-#TODO: Lin and Ng estimation for G>2 groups
-TrackTime("Estimate")
-G = dataset.G   #assume true value of G is known
 
+TrackTime("Estimate")
 x = dataset.data.drop(["y"], axis=1)
 y = dataset.data["y"]
 
-
 pseudo = PSEUDO()
-pseudo.estimate_G(dataset.G)
+pseudo.estimate_G(dataset.G)    #assume true value of G is known
 pseudo.fit(x,y)
 
-
+#TODO: pseudo.predict()
 
 
 TrackTime("Print")
 
 print("TRUE COEFFICIENTS:")
-print(dataset.slopes_df.T)
+print(dataset.slopes_df)
 
 print("\n\nESTIMATED COEFFICIENTS:")
-print(pseudo.beta.T)
+print(pseudo.beta)
 
 
 print("\n")

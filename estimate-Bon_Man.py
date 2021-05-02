@@ -159,15 +159,14 @@ dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
 
 TrackTime("Estimate")
-G = dataset.G   #assume true value of G is known
-
 x = dataset.data.drop(["y"], axis=1)
 y = dataset.data["y"]
 
 gfe = GFE(Slopes.heterog, Effects.gr_tvar_fix)
-gfe.estimate_G(dataset.G)
+gfe.estimate_G(dataset.G)       #assume true value of G is known
 gfe.fit(x, y)
 
+#TODO: gfe.predict()
 
 def group_similarity(true_groups, est_groups):
     best_groups = np.zeros((G, 3))
@@ -216,7 +215,7 @@ print(gfe.theta)
 # for group in groups_list:
 #     print(group)
 
-group_similarity(dataset.groups_list, groups_list)
+# group_similarity(dataset.groups_list, groups_list)
 
 
 if gfe.slopes == Slopes.homog:
