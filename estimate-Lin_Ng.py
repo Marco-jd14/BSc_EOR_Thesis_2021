@@ -38,17 +38,22 @@ class PSEUDO:
         partition = [np.arange(self.N)[q_hat <= gamma].reshape(1,-1)[0], np.arange(self.N)[q_hat > gamma].reshape(1,-1)[0]]
 
         TrackTime("SSR selection")
-        x1 = self.X.loc[partition[0],:]
-        x2 = self.X.loc[partition[1],:]
-        y1 = self.Y.loc[partition[0],:]
-        y2 = self.Y.loc[partition[1],:]
+        partition2 = [np.zeros(len(partition[0])*self.T,dtype=int), np.zeros(len(partition[1])*self.T, dtype=int)]
+        for k in range(2):
+            for i in range(len(partition[k])):
+                partition2[k][i*T:(i+1)*T] = np.arange(partition[k][i]*T,(partition[k][i]+1)*T)
+
+        x1 = self.X.values[partition2[0],:] # ~35x faster than  x1 = self.X.loc[partition[0],:]
+        x2 = self.X.values[partition2[1],:]
+        y1 = self.Y.values[partition2[0]]
+        y2 = self.Y.values[partition2[1]]
 
         TrackTime("gamma SSR")
         beta_hat_1, _, _, _ = lstsq(x1, y1)
         beta_hat_2, _, _, _ = lstsq(x2, y2)
 
-        residuals1 = (y1 - x1 @ beta_hat_1).values
-        residuals2 = (y2 - x2 @ beta_hat_2).values
+        residuals1 = y1 - x1 @ beta_hat_1
+        residuals2 = y2 - x2 @ beta_hat_2
 
         return residuals1@residuals1.T + residuals2@residuals2.T
 
@@ -69,7 +74,6 @@ class PSEUDO:
         q_hat = np.zeros((self.N,self.K))
         for i in range(self.N):
             q_hat[i,:], _, _, _ = lstsq(self.X.loc[i,:], self.Y.loc[i,:])
-
 
         self.min_group_size = 10
 
