@@ -44,11 +44,6 @@ class CK_means:
         TrackTime("Estimate")
 
 
-    def _ssr(self, i, g, x, y):
-        residuals = y - x @ self.beta_hat[:,g]
-        return residuals@residuals.T
-
-
     def _ck_means(self):
         ssr_groups = np.zeros((self.N,self.G))
         groups = self._initial_values()
@@ -59,9 +54,12 @@ class CK_means:
             for i in range(self.N):
                 x = self.X.values[i*self.T:(i+1)*self.T]
                 y = self.Y.values[i*self.T:(i+1)*self.T]
+                TrackTime("Calculate SSR")
                 for g in range(self.G):
                     ssr_groups[i,g] = self._ssr(i,g, x, y)
+                TrackTime("Select indivs")
 
+            TrackTime("Estimate")
             best_fit = np.min(ssr_groups,axis=1)
             for g in range(self.G):
                 groups[ssr_groups[:,g] == best_fit] = g
@@ -77,13 +75,20 @@ class CK_means:
         return groups, s
 
 
+    def _ssr(self, i, g, x, y):
+        residuals = y - x @ self.beta_hat[:,g]
+        return residuals@residuals.T
+
+
     def estimate_G(self, G):
         self.G = G
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
         #demean data:
-        self.X = X - X.groupby('n').mean()
-        self.Y = Y - Y.groupby('n').mean()
+        self.x_bar = X.groupby('n').mean()
+        self.y_bar = Y.groupby('n').mean()
+        self.X = X - self.x_bar
+        self.Y = Y - self.y_bar
 
         self.N = len(set(self.X.index.get_level_values(0)))
         self.T = len(set(self.X.index.get_level_values(1)))
@@ -104,8 +109,18 @@ class CK_means:
                 self.nr_iterations = s
                 print("Iteration %d:\n"%k,np.sort(best_beta_hat, axis=1))
 
-        #TODO: order group numbers based on slope (including fixed effects)
-        self.beta_hat = np.sort(best_beta_hat, axis=1)
+        reorder = np.argsort(best_beta_hat[0,:])
+        self.beta_hat = best_beta_hat[:,reorder]
+
+        groups = np.zeros_like(self.groups, dtype=int)
+        for i in range(len(reorder)):
+            groups[self.groups == i] = reorder[i]
+        self.groups = groups
+
+        self.alphas = np.zeros(self.N)
+        for g in range(self.G):
+            selection = (self.groups == g)
+            self.alphas[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ self.beta_hat[:,g]
 
         col = ['g=%d'%i for i in range(self.G)]
         row = ['k=%d'%i for i in range(self.K)]
@@ -137,7 +152,7 @@ ck_means.fit(x,y)
 
 TrackTime("Print")
 
-print("TOOK %s ITERATIONS\n"%ck_means.nr_iterations)
+print("\n\nTOOK %s ITERATIONS\n"%ck_means.nr_iterations)
 
 print("TRUE COEFFICIENTS:")
 print(dataset.slopes_df)

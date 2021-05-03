@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Apr 11 16:02:00 2021
+Created on Wed Apr 28 11:02:00 2021
 
 @author: Marco
 """
@@ -140,6 +140,8 @@ class PSEUDO:
     def _final_estimate(self, gamma_stars, q_hat):
         TrackTime("Calc beta_hats")
 
+        self.groups = np.zeros(self.N, dtype=int)
+        self.alphas = np.zeros(self.N)
         betas = np.zeros((self.K, self.G))
         for i in range(len(gamma_stars)+1):
             if i==0 and i==len(gamma_stars):
@@ -151,16 +153,18 @@ class PSEUDO:
             else:
                 selection = np.arange(self.N)[np.all([q_hat > gamma_stars[i-1][2], q_hat <= gamma_stars[i][2]],axis=0)]
 
-            #TODO: make a groups_list
-            #TODO: estimate individual fixed effects?
+            self.groups[selection] = i
 
             x_sel = self.X.loc[selection,:]
             y_sel = self.Y.loc[selection,:]
             betas[:,i], _, _, _ = lstsq(x_sel, y_sel)
 
+            # Estimate individual fixed effects
+            self.alphas[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ betas[:,i]
+
         col = ['g=%d'%i for i in range(self.G)]
         row = ['k=%d'%i for i in range(self.K)]
-        self.beta = pd.DataFrame(betas, columns=col, index=row)
+        self.beta_hat = pd.DataFrame(betas, columns=col, index=row)
 
 
     def estimate_G(self, G):
@@ -168,8 +172,10 @@ class PSEUDO:
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
         #demean data:
-        self.X = X - X.groupby('n').mean()
-        self.Y = Y - Y.groupby('n').mean()
+        self.x_bar = X.groupby('n').mean()
+        self.y_bar = Y.groupby('n').mean()
+        self.X = X - self.x_bar
+        self.Y = Y - self.y_bar
 
         self.N = len(set(self.X.index.get_level_values(0)))
         self.T = len(set(self.X.index.get_level_values(1)))
@@ -210,8 +216,9 @@ pseudo = PSEUDO()
 pseudo.estimate_G(dataset.G)    #assume true value of G is known
 pseudo.fit(x,y)
 
+# print(pseudo.alphas)
+# print(dataset.effects_df)
 #TODO: pseudo.predict()
-
 
 TrackTime("Print")
 
@@ -219,7 +226,7 @@ print("\n\nTRUE COEFFICIENTS:")
 print(dataset.slopes_df)
 
 print("\n\nESTIMATED COEFFICIENTS:")
-print(pseudo.beta)
+print(pseudo.beta_hat)
 
 
 # from linearmodels import PanelOLS
