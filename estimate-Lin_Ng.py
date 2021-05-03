@@ -141,7 +141,9 @@ class PSEUDO:
 
         betas = np.zeros((self.K, self.G))
         for i in range(len(gamma_stars)+1):
-            if i==0:
+            if i==0 and i==len(gamma_stars):
+                selection = np.arange(self.N)
+            elif i==0:
                 selection = np.arange(self.N)[q_hat <= gamma_stars[i][2]]
             elif i==len(gamma_stars):
                 selection = np.arange(self.N)[q_hat > gamma_stars[i-1][2]]
@@ -195,7 +197,7 @@ K = 2
 
 
 TrackTime("Simulate")
-dataset = Dataset(N, T, K, G=5)
+dataset = Dataset(N, T, K, G=4)
 dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
 
@@ -217,6 +219,12 @@ print(dataset.slopes_df)
 
 print("\n\nESTIMATED COEFFICIENTS:")
 print(pseudo.beta)
+
+
+# from linearmodels import PanelOLS
+# model_fe = PanelOLS(y, x, entity_effects = True)
+# fe_res = model_fe.fit()
+# print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
 
 
 print("\n")
