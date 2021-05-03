@@ -19,16 +19,20 @@ class PSEUDO:
 
     def _cluster_regressor(self, q_hat, left_n):
         gamma_star = [np.Inf, np.Inf, 0]
-        #TODO: check if enough individuals w.r.t min_group_size (only in case of possibility of discard? )
-        gamma_range = np.zeros(len(q_hat)-1-2*(self.min_group_size-1))
+
+        nr_gamma_options = len(q_hat)-1-2*(self.min_group_size-1)
+        if nr_gamma_options <= 0:
+            print(nr_gamma_options)
+            return gamma_star
+
+        gamma_range = np.zeros(nr_gamma_options)
         q_hat_sorted = np.sort(q_hat)
 
-        for i in range(len(gamma_range)):
+        for i in range(nr_gamma_options):
             gamma_range[i] = (q_hat_sorted[self.min_group_size-1+i] + q_hat_sorted[self.min_group_size+i])/2
 
         for gamma in gamma_range:
             ssr_left, ssr_right = self._ssr(gamma, q_hat, left_n)
-            TrackTime("Estimate")
             if ssr_left + ssr_right < gamma_star[0] + gamma_star[1]:
                 gamma_star[0] = ssr_left
                 gamma_star[1] = ssr_right
@@ -56,19 +60,75 @@ class PSEUDO:
         beta_hat_1, _, _, _ = lstsq(x1, y1)
         beta_hat_2, _, _, _ = lstsq(x2, y2)
 
+        TrackTime("Estimate")
         residuals1 = y1 - x1 @ beta_hat_1
         residuals2 = y2 - x2 @ beta_hat_2
 
         return residuals1@residuals1.T, residuals2@residuals2.T
 
 
-    def _calc_k_star(self, gamma_stars):
+    def _split_groups_in_half(self, i, gamma_stars, q_hat_k):
+        if i==0:
+            new_gammas = [self._cluster_regressor(q_hat_k, 0)]
+        else:
+            left_n = 0
+            new_gammas = []
+            for j in range(len(gamma_stars)+1):
+                if j==0:
+                    rel_q_hat = q_hat_k[q_hat_k <= gamma_stars[j][2]]
+                elif j==len(gamma_stars):
+                    rel_q_hat = q_hat_k[q_hat_k > gamma_stars[j-1][2]]
+                else:
+                    rel_q_hat = q_hat_k[np.all([q_hat_k > gamma_stars[j-1][2], q_hat_k <= gamma_stars[j][2]],axis=0)]
+
+                gamma_star = self._cluster_regressor(rel_q_hat, left_n)
+                new_gammas.append(gamma_star)
+                left_n += len(rel_q_hat)
+
+        gamma_stars = self._update_gamma_stars(i, new_gammas, gamma_stars)
+
+        return gamma_stars
+
+
+    def _update_gamma_stars(self, i, new_gammas, gamma_stars):
+        if 2**(i+1) <= self.G:
+            for j in range( len(gamma_stars) ):
+                gamma_stars[j][0] = 0
+                gamma_stars[j][1] = 0
+            for j in range( len(gamma_stars)+1 ):
+                gamma_stars.insert(2*j, new_gammas[j])
+
+        else:
+            #splitting each group in half leads to too many groups --> pick best groups to split in half
+            improvements = np.zeros((len(new_gammas),2))
+            for j in range(len(new_gammas)):
+                improvements[j,0] = gamma_stars[int(j/2)*2][j%2] / (new_gammas[j][0]+new_gammas[j][1])
+                improvements[j,1] = j
+
+            best_new_gamma_indices = np.zeros(self.G - 2**i,dtype=int)
+            best_new_gamma_indices[:] = improvements[np.argsort(improvements[:,0])][-(self.G - 2**i):,1]
+
+            for index in best_new_gamma_indices:
+                gamma_stars[int(index/2)*2][index%2] = 0
+            for index in best_new_gamma_indices:
+                for j in range(len(gamma_stars)):
+                    if gamma_stars[j][2] > new_gammas[index][2]:
+                        gamma_stars.insert(j,new_gammas[index])
+                        break
+                    if j == len(gamma_stars)-1:
+                        gamma_stars.append(new_gammas[index])
+
+        return gamma_stars
+
+
+    def _calc_k_star(self, gamma_stars_per_k):
         k_star = [np.Inf, 0]
         for k in range(self.K):
-            tot_ssr = gamma_stars[k][0][0]
-            for gamma in gamma_stars[k]:
-                tot_ssr += gamma[1]
+            tot_ssr = 0
+            for gamma_star in gamma_stars_per_k[k]:
+                tot_ssr += (gamma_star[0] + gamma_star[1])
 
+            # print(tot_ssr/k_star[0])
             if tot_ssr < k_star[0]:
                 k_star[0] = tot_ssr
                 k_star[1] = k
@@ -76,17 +136,17 @@ class PSEUDO:
         return k_star[1]
 
 
-    def _final_estimate(self, gamma_star, q_hat):
+    def _final_estimate(self, gamma_stars, q_hat):
         TrackTime("Calc beta_hats")
 
         betas = np.zeros((self.K, self.G))
-        for i in range(len(gamma_star)+1):
+        for i in range(len(gamma_stars)+1):
             if i==0:
-                selection = np.arange(self.N)[q_hat <= gamma_star[i][2]]
-            elif i==len(gamma_star):
-                selection = np.arange(self.N)[q_hat > gamma_star[i-1][2]]
+                selection = np.arange(self.N)[q_hat <= gamma_stars[i][2]]
+            elif i==len(gamma_stars):
+                selection = np.arange(self.N)[q_hat > gamma_stars[i-1][2]]
             else:
-                selection = np.arange(self.N)[np.all([q_hat > gamma_star[i-1][2], q_hat <= gamma_star[i][2]],axis=0)]
+                selection = np.arange(self.N)[np.all([q_hat > gamma_stars[i-1][2], q_hat <= gamma_stars[i][2]],axis=0)]
 
             #TODO: make a groups_list
             #TODO: estimate individual fixed effects?
@@ -111,63 +171,31 @@ class PSEUDO:
         self.N = len(set(self.X.index.get_level_values(0)))
         self.T = len(set(self.X.index.get_level_values(1)))
         self.K = len(self.X.columns)
-        self.min_group_size = 5
+        self.min_group_size = 10
 
         q_hat = np.zeros((self.N,self.K))
         for i in range(self.N):
             select = np.arange(i*self.T,(i+1)*self.T)
             q_hat[i,:], _, _, _ = lstsq(self.X.values[select], self.Y.values[select])
 
-        gamma_stars = [[] for i in range(self.K)]
+        gamma_stars_per_k = [[] for i in range(self.K)]
         for k in range(self.K):
-            q_hat_k = q_hat[:,k]
-
             for i in range(int(np.ceil(np.log2(self.G)))):
-                if i==0:
-                    gamma_star = self._cluster_regressor(q_hat_k, 0)
-                    gamma_stars[k].append(gamma_star)
-                else:
-                    left_n = 0
-                    new_gammas = []
-                    for j in range(len(gamma_stars[k])+1):
-                        if j==0:
-                            rel_q_hat = q_hat_k[q_hat_k <= gamma_stars[k][j][2]]
-                        elif j==len(gamma_stars[k]):
-                            rel_q_hat = q_hat_k[q_hat_k > gamma_stars[k][j-1][2]]
-                        else:
-                            rel_q_hat = q_hat_k[np.all([q_hat_k > gamma_stars[k][j-1][2], q_hat_k <= gamma_stars[k][j][2]],axis=0)]
+                gamma_stars_per_k[k] = self._split_groups_in_half(i, gamma_stars_per_k[k], q_hat[:,k])
 
-                        gamma_star = self._cluster_regressor(rel_q_hat, left_n)
-                        new_gammas.append(gamma_star)
-                        left_n += len(rel_q_hat)
+        k_star = self._calc_k_star(gamma_stars_per_k)
 
-                    if 2**(i+1) > self.G:
-                        #TODO: select groups
-                        print("HELLO")
-                    else:
-                        for j in range( len(gamma_stars[k]) ):
-                            gamma_stars[k][j][0] = 0
-                            gamma_stars[k][j][1] = 0
-                        for j in range( len(gamma_stars[k])+1 ):
-                            gamma_stars[k].insert(2*j, new_gammas[j])
-
-        k_star = self._calc_k_star(gamma_stars)
-
-        for gamma in gamma_stars[k_star]:
-            print(gamma[2],end='  ')
-        print("  k:", k_star)
-
-        self._final_estimate(gamma_stars[k_star], q_hat[:,k_star])
+        self._final_estimate(gamma_stars_per_k[k_star], q_hat[:,k_star])
 
 
 np.random.seed(0)
-N = 100
-T = 250
-K = 3
+N = 250
+T = 500
+K = 2
 
 
 TrackTime("Simulate")
-dataset = Dataset(N, T, K, G=7)
+dataset = Dataset(N, T, K, G=5)
 dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
 
@@ -184,7 +212,7 @@ pseudo.fit(x,y)
 
 TrackTime("Print")
 
-print("TRUE COEFFICIENTS:")
+print("\n\nTRUE COEFFICIENTS:")
 print(dataset.slopes_df)
 
 print("\n\nESTIMATED COEFFICIENTS:")
