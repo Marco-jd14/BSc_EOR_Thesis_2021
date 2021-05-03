@@ -12,6 +12,7 @@ from scipy.linalg import lstsq
 from simulate import Effects, Slopes, Variance, Dataset
 from lib.tracktime import TrackTime, TrackReport
 
+
 class PSEUDO:
     def __init__(self):
         pass
@@ -190,14 +191,14 @@ class PSEUDO:
         self._final_estimate(gamma_stars_per_k[k_star], q_hat[:,k_star])
 
 
-np.random.seed(0)
+np.random.seed(10)
 N = 250
-T = 500
+T = 100
 K = 2
 
 
 TrackTime("Simulate")
-dataset = Dataset(N, T, K, G=4)
+dataset = Dataset(N, T, K, G=3)
 dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
 
