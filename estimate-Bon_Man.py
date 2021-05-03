@@ -155,7 +155,7 @@ K = 1
 
 TrackTime("Simulate")
 dataset = Dataset(N, T, K, G=4)
-dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
+dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
 
 
 TrackTime("Estimate")
@@ -169,7 +169,7 @@ gfe.fit(x, y)
 #TODO: gfe.predict()
 
 def group_similarity(true_groups, est_groups):
-    best_groups = np.zeros((G, 3))
+    best_groups = np.zeros((gfe.G, 3))
     best_groups[:,0] = np.Inf
 
     for i in range(len(true_groups)):
@@ -195,7 +195,7 @@ def group_similarity(true_groups, est_groups):
 
 TrackTime("Estimate")
 
-groups_list = [[] for g in range(G)]
+groups_list = [[] for g in range(gfe.G)]
 for i in range(N):
     groups_list[gfe.groups[i][0]].append(i)
 
@@ -220,21 +220,19 @@ print(gfe.theta)
 
 if gfe.slopes == Slopes.homog:
     TrackTime("Standard libraries")
-    exog = dataset.data.drop(['y'], axis=1)
-    endog = dataset.data['y']
-    
+
     # from linearmodels import PooledOLS
-    # mod = PooledOLS(endog, exog) 
+    # mod = PooledOLS(y, x) 
     # pooledOLS_res = mod.fit(cov_type='clustered', cluster_entity=True)
     # print("\nPOOLED OLS ESTIMATION:"), print(pooledOLS_res.params)
-    
+
     from linearmodels import RandomEffects
-    model_re = RandomEffects(endog, exog)
+    model_re = RandomEffects(y, x)
     re_res = model_re.fit()
     print("\nRANDOM EFFECTS ESTIMATION:"), print(re_res.params)
-    
+
     from linearmodels import PanelOLS
-    model_fe = PanelOLS(endog, exog, entity_effects = True)
+    model_fe = PanelOLS(y, x, entity_effects = True)
     fe_res = model_fe.fit()
     print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
 
