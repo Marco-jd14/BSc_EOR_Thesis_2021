@@ -38,7 +38,7 @@ class GFE:
             else:
                 self.alpha[g,:] = (self.Y[start:end] - self.X.values[start:end] @ self.theta[:,g].reshape(self.K,1)).reshape(self.T)
 
-        self.groups = np.zeros((self.N,1), dtype=int)
+        self.groups = np.zeros(self.N, dtype=int)
 
 
     def _group_assignment(self):
@@ -59,7 +59,7 @@ class GFE:
                     best_g_val = fit
                     self.groups[i] = g
 
-            unused_g.discard(self.groups[i][0])
+            unused_g.discard(self.groups[i])
         print(unused_g) if len(unused_g) != 0 else None
 
 
@@ -138,8 +138,17 @@ class GFE:
         self.nr_iterations = s+1
 
         #TODO: order group numbers based on slope (including fixed effects)
+        print(self.theta)
         if self.slopes == Slopes.heterog:
-            self.theta = np.sort(self.theta, axis=1)
+            # self.theta = np.sort(self.theta, axis=1)
+            reorder = np.argsort(self.theta[0,:])
+            self.theta = self.theta[:,reorder]
+            self.alpha = self.alpha[reorder,:]
+
+            groups = np.zeros_like(self.groups, dtype=int)
+            for i in range(len(reorder)):
+                groups[self.groups == i] = reorder[i]
+            self.groups = groups
 
         col = ['g=%d'%i for i in range(self.G)]
         row = ['k=%d'%i for i in range(self.K)]
@@ -150,7 +159,7 @@ class GFE:
 np.random.seed(0)
 N = 500
 T = 10
-K = 1
+K = 2
 
 
 TrackTime("Simulate")
@@ -195,9 +204,12 @@ def group_similarity(true_groups, est_groups):
 
 TrackTime("Estimate")
 
+print(gfe.alpha)
+# print(gfe.groups)
+
 groups_list = [[] for g in range(gfe.G)]
 for i in range(N):
-    groups_list[gfe.groups[i][0]].append(i)
+    groups_list[gfe.groups[i]].append(i)
 
 
 print("TOOK %s ITERATIONS\n"%gfe.nr_iterations)
