@@ -221,6 +221,25 @@ class PSEUDO:
             print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
 
 
+    def predict(self):
+        self.fitted_values = np.zeros_like(self.Y)
+
+        X = self.X + self.x_bar
+
+        for g in range(self.G):
+            selection = np.where(self.groups_per_indiv == g)[0]
+            selection_indices = np.zeros(len(selection)*self.T, dtype=int)
+            for i in range(len(selection)):
+                selection_indices[i*self.T:(i+1)*self.T] = np.arange(self.T) + selection[i]*self.T
+
+            fixed_effects = np.kron(self.alpha_hat.values[selection].reshape(len(selection)),np.ones(self.T))
+            self.fitted_values[selection_indices] = X.values[selection_indices,:] @ self.beta_hat.values[:,g] + fixed_effects
+
+        self.resids = self.Y + self.y_bar - self.fitted_values
+        index = pd.MultiIndex.from_product([np.arange(self.N), np.arange(self.T)], names=["n", "t"])
+        self.fitted_values = pd.DataFrame(self.fitted_values, index=index)
+
+
 
 np.random.seed(10)
 N = 250
@@ -240,8 +259,9 @@ y = dataset.data["y"]
 pseudo = PSEUDO()
 pseudo.estimate_G(dataset.G)    #assume true value of G is known
 pseudo.fit(x,y)
+pseudo.predict()
 
-#TODO: pseudo.predict()
+
 
 TrackTime("Print")
 
