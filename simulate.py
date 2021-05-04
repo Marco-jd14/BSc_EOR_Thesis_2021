@@ -64,39 +64,48 @@ class Dataset:
                 group_size = int(np.round(np.random.uniform(0.75*self.N/self.G, 1.25*self.N/self.G), 0))
             group_sizes[g] = group_size
 
-        self.groups_list = [[] for g in range(self.G)]
+        self.indivs_per_group = [[] for g in range(self.G)]
         for g in range(self.G):
             for i in range(group_sizes[g]):
-                self.groups_list[g].append(individuals[ np.sum(group_sizes[:g]) + i ])
+                self.indivs_per_group[g].append(individuals[ np.sum(group_sizes[:g]) + i ])
 
-        self.groups_mat = np.zeros((self.G, self.N), dtype=int)
+        self.groups_per_indiv = np.zeros(self.N, dtype=int)
+        groups_mat = np.zeros((self.G, self.N), dtype=int)
         for g in range(self.G):
-            self.groups_list[g][:] = np.sort(self.groups_list[g])
-            self.groups_mat[g, self.groups_list[g]] = 1
+            self.indivs_per_group[g][:] = np.sort(self.indivs_per_group[g])
+            groups_mat[g, self.indivs_per_group[g]] = 1
+            self.groups_per_indiv[self.indivs_per_group[g]] = g
+
+        return groups_mat
 
 
-    def sim_effects(self):
+    def sim_effects(self, groups_mat):
         if self.effects == Effects.none:
-            effects_m = np.zeros((self.N, self.T))
+            effects = np.zeros((self.N, 1))
+            effects_m = effects @ np.ones((1, self.T))
 
         elif self.effects == Effects.ind_rand:
-            effects_m = np.random.normal(0, 50/2, size=(self.N, 1)) @ np.ones((1, self.T))
+            effects = np.random.normal(0, 50/2, size=(self.N, 1))
+            effects_m = effects @ np.ones((1, self.T))
 
         elif self.effects == Effects.ind_fix:
-            effects_m = np.random.uniform(0, 50, size=(self.N, 1)) @ np.ones((1, self.T))
+            effects = np.random.uniform(0, 50, size=(self.N, 1))
+            effects_m = effects @ np.ones((1, self.T))
 
         elif self.effects == Effects.gr_tvar_fix:
-            group_effects = np.random.uniform(0, 50, size=(self.G, self.T))
-            effects_m = self.groups_mat.T @ group_effects
+            effects = np.random.uniform(0, 50, size=(self.G, self.T))
+            effects_m = groups_mat.T @ effects
 
         elif self.effects == Effects.both_fix:
             indiv_fix_eff = np.random.uniform(0, 50, size=(self.N, 1)) @ np.ones((1, self.T))
             group_fix_eff = np.random.uniform(0, 50, size=(self.G, self.T))
-            effects_m = self.groups_mat.T @ group_fix_eff + indiv_fix_eff
+            effects_m = groups_mat.T @ group_fix_eff + indiv_fix_eff
+            effects = effects_m
 
-        col = ['t=%d'%i for i in range(self.T)]
-        row = ['n=%d'%i for i in range(self.N)]
-        self.effects_df = pd.DataFrame(effects_m, columns=col, index=row)
+        col = ['t=%d'%i for i in range(len(effects[0]))]
+        row = ['n=%d'%i for i in range(len(effects))]
+        self.effects_df = pd.DataFrame(effects, columns=col, index=row)
+        return effects_m
 
 
     def sim_slopes(self):
@@ -121,17 +130,18 @@ class Dataset:
         self.has_groups = (effects == Effects.gr_tvar_fix or effects == Effects.both_fix or slopes == Slopes.heterog)
 
         if self.has_groups:
-            self.sim_groups()
+            groups_mat = self.sim_groups()
         else:
             self.G = 1
+            groups_mat = np.ones((self.G, self.N), dtype=int)
 
-        self.sim_effects()
+        effects_m = self.sim_effects(groups_mat)
 
         X_range = [10, 40]
         X = np.random.uniform(X_range[0], X_range[1], size=(self.N, self.T, self.K))
         #TODO: fix correlation
         # if self.effects == Effects.ind_fix:
-        #     X[:,:,0] += self.effects_df.values       #create correlation between regressor and ommitted variable (fixed effects)
+        #     X[:,:,0] += effects_m.values       #create correlation between regressor and ommitted variable (fixed effects)
 
         # print(pd.DataFrame(np.hstack((indiv_fixed_effects,X[:,:,0]))).corr())
 
@@ -143,9 +153,9 @@ class Dataset:
             Y = np.zeros((self.N, self.T))
             temp = X @ self.slopes_df.values
             for g in range(self.G):
-                Y += temp[:,:,g] * self.groups_mat.T[:,g].reshape(self.N, 1)
+                Y += temp[:,:,g] * groups_mat.T[:,g].reshape(self.N, 1)
 
-        Y += self.effects_df.values
+        Y += effects_m
 
         if self.var == Variance.heterosk:
             heterosk = (X[:,:,0]/np.mean(X[:,:,0])) #/np.sqrt(K)

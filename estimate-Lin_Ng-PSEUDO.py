@@ -140,8 +140,8 @@ class PSEUDO:
     def _final_estimate(self, gamma_stars, q_hat):
         TrackTime("Calc beta_hats")
 
-        self.groups = np.zeros(self.N, dtype=int)
-        self.alphas = np.zeros(self.N)
+        self.groups_per_indiv = np.zeros(self.N, dtype=int)
+        self.alpha_hat = np.zeros(self.N)
         betas = np.zeros((self.K, self.G))
         for i in range(len(gamma_stars)+1):
             if i==0 and i==len(gamma_stars):
@@ -153,18 +153,26 @@ class PSEUDO:
             else:
                 selection = np.arange(self.N)[np.all([q_hat > gamma_stars[i-1][2], q_hat <= gamma_stars[i][2]],axis=0)]
 
-            self.groups[selection] = i
+            self.groups_per_indiv[selection] = i
 
             x_sel = self.X.loc[selection,:]
             y_sel = self.Y.loc[selection,:]
             betas[:,i], _, _, _ = lstsq(x_sel, y_sel)
 
             # Estimate individual fixed effects
-            self.alphas[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ betas[:,i]
+            self.alpha_hat[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ betas[:,i]
+
+        self.indivs_per_group = [[] for g in range(self.G)]
+        for i in range(self.N):
+            self.indivs_per_group[self.groups_per_indiv[i]].append(i)
 
         col = ['g=%d'%i for i in range(self.G)]
         row = ['k=%d'%i for i in range(self.K)]
         self.beta_hat = pd.DataFrame(betas, columns=col, index=row)
+
+        col = ['t=%d'%i for i in range(1)]
+        row = ['n=%d'%i for i in range(len(self.alpha_hat))]
+        self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
 
 
     def estimate_G(self, G):
@@ -216,18 +224,23 @@ pseudo = PSEUDO()
 pseudo.estimate_G(dataset.G)    #assume true value of G is known
 pseudo.fit(x,y)
 
-# print(pseudo.alphas)
-# print(dataset.effects_df)
 #TODO: pseudo.predict()
 
 TrackTime("Print")
 
 print("\n\nTRUE COEFFICIENTS:")
 print(dataset.slopes_df)
+print(dataset.effects_df)
+# print(dataset.groups_per_indiv)
+for group in dataset.indivs_per_group:
+    print(group)
 
 print("\n\nESTIMATED COEFFICIENTS:")
 print(pseudo.beta_hat)
-
+print(pseudo.alpha_hat)
+# print(gfe.groups_per_indiv)
+for group in pseudo.indivs_per_group:
+    print(group)
 
 # from linearmodels import PanelOLS
 # model_fe = PanelOLS(y, x, entity_effects = True)

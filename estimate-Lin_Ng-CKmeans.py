@@ -105,26 +105,35 @@ class CK_means:
             if tot_ssr < best_tot_ssr:
                 best_tot_ssr = tot_ssr
                 best_beta_hat = self.beta_hat
-                self.groups = copy(groups)
+                self.groups_per_indiv = copy(groups)
                 self.nr_iterations = s
                 print("Iteration %d:\n"%k,np.sort(best_beta_hat, axis=1))
+
 
         reorder = np.argsort(best_beta_hat[0,:])
         self.beta_hat = best_beta_hat[:,reorder]
 
-        groups = np.zeros_like(self.groups, dtype=int)
+        groups = np.zeros_like(self.groups_per_indiv, dtype=int)
         for i in range(len(reorder)):
-            groups[self.groups == i] = reorder[i]
-        self.groups = groups
+            groups[self.groups_per_indiv == reorder[i]] = i
+        self.groups_per_indiv = groups
 
-        self.alphas = np.zeros(self.N)
+        self.alpha_hat = np.zeros(self.N)
         for g in range(self.G):
-            selection = (self.groups == g)
-            self.alphas[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ self.beta_hat[:,g]
+            selection = (self.groups_per_indiv == g)
+            self.alpha_hat[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ self.beta_hat[:,g]
+
+        self.indivs_per_group = [[] for g in range(self.G)]
+        for i in range(self.N):
+            self.indivs_per_group[self.groups_per_indiv[i]].append(i)
 
         col = ['g=%d'%i for i in range(self.G)]
         row = ['k=%d'%i for i in range(self.K)]
         self.beta_hat = pd.DataFrame(self.beta_hat, columns=col, index=row)
+
+        col = ['t=%d'%i for i in range(1)]
+        row = ['n=%d'%i for i in range(len(self.alpha_hat))]
+        self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
 
 
 
@@ -149,17 +158,32 @@ ck_means.fit(x,y)
 
 #TODO: pseudo.predict()
 
+#TODO: in simulate.py improve effects_df
+
+#TODO: for all estimate.py, turn alphas into a DataFrame
+
+#TODO: Plot predictions
+
+#TODO Plot residuals
+
 
 TrackTime("Print")
 
 print("\n\nTOOK %s ITERATIONS\n"%ck_means.nr_iterations)
 
-print("TRUE COEFFICIENTS:")
+print("\n\nTRUE COEFFICIENTS:")
 print(dataset.slopes_df)
+print(dataset.effects_df)
+# print(dataset.groups_per_indiv)
+for group in dataset.indivs_per_group:
+    print(group)
 
 print("\n\nESTIMATED COEFFICIENTS:")
 print(ck_means.beta_hat)
-
+print(ck_means.alpha_hat)
+# print(gfe.groups_per_indiv)
+for group in ck_means.indivs_per_group:
+    print(group)
 
 # from linearmodels import PanelOLS
 # model_fe = PanelOLS(y, x, entity_effects = True)

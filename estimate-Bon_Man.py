@@ -23,22 +23,22 @@ class GFE:
 
     def _initial_values(self):
         if self.slopes == Slopes.homog:
-            self.theta = np.random.uniform(0.5, 5, size=(self.K, 1))
+            self.beta_hat = np.random.uniform(0.5, 5, size=(self.K, 1))
         else:
-            self.theta = np.random.uniform(0.5, 5, size=(self.K, self.G))
+            self.beta_hat = np.random.uniform(0.5, 5, size=(self.K, self.G))
 
         choices = np.random.choice(range(self.N), (self.G), replace=False)
-        self.alpha = np.zeros((self.G,self.T))
+        self.alpha_hat = np.zeros((self.G,self.T))
 
         for g in range(self.G):
             start = choices[g]*self.T
             end = (choices[g]+1)*self.T
             if self.slopes == Slopes.homog:
-                self.alpha[g,:] = (self.Y[start:end] - self.X.values[start:end] @ self.theta).reshape(self.T)
+                self.alpha_hat[g,:] = (self.Y[start:end] - self.X.values[start:end] @ self.beta_hat).reshape(self.T)
             else:
-                self.alpha[g,:] = (self.Y[start:end] - self.X.values[start:end] @ self.theta[:,g].reshape(self.K,1)).reshape(self.T)
+                self.alpha_hat[g,:] = (self.Y[start:end] - self.X.values[start:end] @ self.beta_hat[:,g].reshape(self.K,1)).reshape(self.T)
 
-        self.groups = np.zeros(self.N, dtype=int)
+        self.groups_per_indiv = np.zeros(self.N, dtype=int)
 
 
     def _group_assignment(self):
@@ -47,19 +47,19 @@ class GFE:
         for i in range(self.N):
             best_g_val = np.Inf
             if self.slopes == Slopes.homog:
-                residuals = self.Y[i*self.T:(i+1)*self.T] - self.X.values[i*self.T:(i+1)*self.T] @ self.theta
+                residuals = self.Y[i*self.T:(i+1)*self.T] - self.X.values[i*self.T:(i+1)*self.T] @ self.beta_hat
 
             for g in range(self.G):
                 if self.slopes == Slopes.heterog:
-                    residuals = self.Y[i*self.T:(i+1)*self.T] - self.X.values[i*self.T:(i+1)*self.T] @ self.theta[:,g].reshape(self.K,1)
+                    residuals = self.Y[i*self.T:(i+1)*self.T] - self.X.values[i*self.T:(i+1)*self.T] @ self.beta_hat[:,g].reshape(self.K,1)
 
-                temp = (residuals.reshape(self.T) - self.alpha[g,:]).reshape(-1,1)
+                temp = (residuals.reshape(self.T) - self.alpha_hat[g,:]).reshape(-1,1)
                 fit = temp.T@temp
                 if fit < best_g_val:
                     best_g_val = fit
-                    self.groups[i] = g
+                    self.groups_per_indiv[i] = g
 
-            unused_g.discard(self.groups[i])
+            unused_g.discard(self.groups_per_indiv[i])
         print(unused_g) if len(unused_g) != 0 else None
 
 
@@ -69,8 +69,8 @@ class GFE:
 
         for i in range(self.N):
             for t in range(self.T):
-                effect_dummies[i*self.T + t] = "%d_%d" %(self.groups[i],t)
-                slope_dummies[i*self.T + t] = self.groups[i]
+                effect_dummies[i*self.T + t] = "%d_%d" %(self.groups_per_indiv[i],t)
+                slope_dummies[i*self.T + t] = self.groups_per_indiv[i]
 
         if self.slopes == Slopes.heterog:
             new_x = np.zeros((self.N*self.T, self.K*self.G))
@@ -84,7 +84,7 @@ class GFE:
         else:
             X = copy(self.X)
 
-        X['alpha'] = effect_dummies
+        X['alphahat'] = effect_dummies
         X = pd.get_dummies(X)
         return X
 
@@ -92,14 +92,14 @@ class GFE:
     def _update_values(self, p, features):
         index = self.K*self.G if self.slopes == Slopes.heterog else self.K
         if self.slopes == Slopes.heterog:
-            self.theta = p[:index].reshape(self.K,self.G)
+            self.beta_hat = p[:index].reshape(self.K,self.G)
         else:
-            self.theta = p[:index]
+            self.beta_hat = p[:index]
 
         i = 0
         for g in features[index::self.T]:
             g = int(g.split("_")[1])
-            self.alpha[g,:] = p[index + i*self.T : index + (i+1)*self.T].reshape(self.T)
+            self.alpha_hat[g,:] = p[index + i*self.T : index + (i+1)*self.T].reshape(self.T)
             i += 1
 
 
@@ -115,7 +115,7 @@ class GFE:
         self.Y = Y.values.reshape(N*T,1)
 
         self._initial_values()
-        prev_theta = np.zeros_like(self.theta)
+        prev_beta_hat = np.zeros_like(self.beta_hat)
 
         for s in range(100):
             TrackTime("Fit a group")
@@ -130,29 +130,34 @@ class GFE:
             TrackTime("Estimate")
             self._update_values(p, X.columns)
 
-            # print((self.theta-prev_theta)**2)
-            if np.all((self.theta-prev_theta)**2 < 0.00001):
+            # print((self.beta_hat-prev_beta_hat)**2)
+            if np.all((self.beta_hat-prev_beta_hat)**2 < 0.00001):
                 break
-            prev_theta = copy(self.theta)
+            prev_beta_hat = copy(self.beta_hat)
 
         self.nr_iterations = s+1
 
-        #TODO: order group numbers based on slope (including fixed effects)
-        print(self.theta)
         if self.slopes == Slopes.heterog:
-            # self.theta = np.sort(self.theta, axis=1)
-            reorder = np.argsort(self.theta[0,:])
-            self.theta = self.theta[:,reorder]
-            self.alpha = self.alpha[reorder,:]
+            reorder = np.argsort(self.beta_hat[0,:])
+            self.beta_hat = self.beta_hat[:,reorder]
+            self.alpha_hat = self.alpha_hat[reorder,:]
 
-            groups = np.zeros_like(self.groups, dtype=int)
+            groups = np.zeros_like(self.groups_per_indiv, dtype=int)
             for i in range(len(reorder)):
-                groups[self.groups == i] = reorder[i]
-            self.groups = groups
+                groups[self.groups_per_indiv == reorder[i]] = i
+            self.groups_per_indiv = groups
+
+        self.indivs_per_group = [[] for g in range(self.G)]
+        for i in range(self.N):
+            self.indivs_per_group[self.groups_per_indiv[i]].append(i)
 
         col = ['g=%d'%i for i in range(self.G)]
         row = ['k=%d'%i for i in range(self.K)]
-        self.theta = pd.DataFrame(self.theta, columns=col, index=row)
+        self.beta_hat = pd.DataFrame(self.beta_hat, columns=col, index=row)
+
+        col = ['t=%d'%i for i in range(len(self.alpha_hat[0]))]
+        row = ['n=%d'%i for i in range(len(self.alpha_hat))]
+        self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
 
 
 
@@ -202,30 +207,26 @@ def group_similarity(true_groups, est_groups):
         print("INTERSECTION:", len(set(true_groups[i]).intersection(set(est_groups[int(best_groups[i,2])]))))
         print("")
 
-TrackTime("Estimate")
+TrackTime("Print")
 
-print(gfe.alpha)
-# print(gfe.groups)
 
-groups_list = [[] for g in range(gfe.G)]
-for i in range(N):
-    groups_list[gfe.groups[i]].append(i)
 
 
 print("TOOK %s ITERATIONS\n"%gfe.nr_iterations)
 
 print("TRUE COEFFICIENTS:")
 print(dataset.slopes_df)
-# print(dataset.effects_df)
-# for group in dataset.groups_list:
-#     print(group)
+print(dataset.effects_df)
+# print(dataset.groups_per_indiv)
+for group in dataset.indivs_per_group:
+    print(group)
 
 print("\n\nESTIMATED COEFFICIENTS:")
-print(gfe.theta)
-# print(gfe.alpha)
-# print(groups_list)
-# for group in groups_list:
-#     print(group)
+print(gfe.beta_hat)
+print(gfe.alpha_hat)
+# print(gfe.groups_per_indiv)
+for group in gfe.indivs_per_group:
+    print(group)
 
 # group_similarity(dataset.groups_list, groups_list)
 
