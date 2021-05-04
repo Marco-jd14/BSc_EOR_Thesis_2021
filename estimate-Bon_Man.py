@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from copy import copy
 from scipy.linalg import lstsq
+import matplotlib.pyplot as plt
 
 from simulate import Effects, Slopes, Variance, Dataset
 from lib.tracktime import TrackTime, TrackReport
@@ -199,6 +200,24 @@ class GFE:
         self.fitted_values = pd.DataFrame(self.fitted_values, index=index)
 
 
+def plot_residuals(fitted_values, residuals):
+    fig, ax = plt.subplots(figsize=(6,4))
+    ax.scatter(fitted_values, residuals, color = 'blue', s=2)
+    ax.axhline(0, color = 'r', ls = '--')
+    ax.set_xlabel('Predicted Values', fontsize = 12)
+    ax.set_ylabel('Residuals', fontsize = 12)
+    plt.show()
+
+def plot_fitted_values(feat_dim, true_values, fitted_values):
+    fitted_values = fitted_values.values if isinstance(fitted_values, pd.DataFrame) else fitted_values
+    fig, ax = plt.subplots(figsize=(6,4))
+    ax.plot(feat_dim, true_values, 'ok')
+    ax.plot(feat_dim, fitted_values, 'o', markersize=1)
+    ax.set_xlabel('First feature', fontsize = 12)
+    ax.legend(['True values', 'Fitted values'])
+    plt.show()
+
+
 
 np.random.seed(0)
 N = 500
@@ -220,6 +239,10 @@ gfe.estimate_G(dataset.G)       #assume true value of G is known
 gfe.fit(x, y)
 gfe.predict()
 
+
+TrackTime("Plot")
+plot_residuals(gfe.fitted_values, gfe.resids)
+plot_fitted_values(x['feature0'], y, gfe.fitted_values)
 
 
 TrackTime("Print")
