@@ -80,6 +80,37 @@ class CK_means:
         return residuals@residuals.T
 
 
+    def _sort_groups(self, best_beta_hat):
+        reorder = np.argsort(best_beta_hat[0,:])
+        self.beta_hat = best_beta_hat[:,reorder]
+
+        groups = np.zeros_like(self.groups_per_indiv, dtype=int)
+        for i in range(len(reorder)):
+            groups[self.groups_per_indiv == reorder[i]] = i
+        self.groups_per_indiv = groups
+
+
+    def _estimate_fixed_effects(self):
+        self.alpha_hat = np.zeros(self.N)
+        for g in range(self.G):
+            selection = (self.groups_per_indiv == g)
+            self.alpha_hat[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ self.beta_hat[:,g]
+
+
+    def _make_dataframes(self):
+        self.indivs_per_group = [[] for g in range(self.G)]
+        for i in range(self.N):
+            self.indivs_per_group[self.groups_per_indiv[i]].append(i)
+
+        col = ['g=%d'%i for i in range(self.G)]
+        row = ['k=%d'%i for i in range(self.K)]
+        self.beta_hat = pd.DataFrame(self.beta_hat, columns=col, index=row)
+
+        col = ['t=%d'%i for i in range(1)]
+        row = ['n=%d'%i for i in range(len(self.alpha_hat))]
+        self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
+
+
     def estimate_G(self, G):
         self.G = G
 
@@ -109,31 +140,9 @@ class CK_means:
                 self.nr_iterations = s
                 print("Iteration %d:\n"%k,np.sort(best_beta_hat, axis=1))
 
-
-        reorder = np.argsort(best_beta_hat[0,:])
-        self.beta_hat = best_beta_hat[:,reorder]
-
-        groups = np.zeros_like(self.groups_per_indiv, dtype=int)
-        for i in range(len(reorder)):
-            groups[self.groups_per_indiv == reorder[i]] = i
-        self.groups_per_indiv = groups
-
-        self.alpha_hat = np.zeros(self.N)
-        for g in range(self.G):
-            selection = (self.groups_per_indiv == g)
-            self.alpha_hat[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ self.beta_hat[:,g]
-
-        self.indivs_per_group = [[] for g in range(self.G)]
-        for i in range(self.N):
-            self.indivs_per_group[self.groups_per_indiv[i]].append(i)
-
-        col = ['g=%d'%i for i in range(self.G)]
-        row = ['k=%d'%i for i in range(self.K)]
-        self.beta_hat = pd.DataFrame(self.beta_hat, columns=col, index=row)
-
-        col = ['t=%d'%i for i in range(1)]
-        row = ['n=%d'%i for i in range(len(self.alpha_hat))]
-        self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
+        self._sort_groups(best_beta_hat)
+        self._estimate_fixed_effects()
+        self._make_dataframes()
 
 
 
@@ -156,15 +165,18 @@ ck_means = CK_means()
 ck_means.estimate_G(dataset.G)    #assume true value of G is known
 ck_means.fit(x,y)
 
+
+#TODO: Move certain parts of code to functions
+
+#TODO: Make comments
+
 #TODO: pseudo.predict()
-
-#TODO: in simulate.py improve effects_df
-
-#TODO: for all estimate.py, turn alphas into a DataFrame
 
 #TODO: Plot predictions
 
-#TODO Plot residuals
+#TODO: Plot residuals
+
+#TODO: estimate G
 
 
 TrackTime("Print")

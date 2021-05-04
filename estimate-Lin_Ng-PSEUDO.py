@@ -112,6 +112,7 @@ class PSEUDO:
             for index in best_new_gamma_indices:
                 gamma_stars[int(index/2)*2][index%2] = 0
             for index in best_new_gamma_indices:
+                #find right place to insert the new_gammas in the gamma_stars list to keep it sorted
                 for j in range(len(gamma_stars)):
                     if gamma_stars[j][2] > new_gammas[index][2]:
                         gamma_stars.insert(j,new_gammas[index])
@@ -162,6 +163,10 @@ class PSEUDO:
             # Estimate individual fixed effects
             self.alpha_hat[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ betas[:,i]
 
+        self._make_dataframes(betas)
+
+
+    def _make_dataframes(self, betas):
         self.indivs_per_group = [[] for g in range(self.G)]
         for i in range(self.N):
             self.indivs_per_group[self.groups_per_indiv[i]].append(i)

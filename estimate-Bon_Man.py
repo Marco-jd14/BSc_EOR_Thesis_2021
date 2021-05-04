@@ -103,6 +103,31 @@ class GFE:
             i += 1
 
 
+    def _sort_groups(self):
+        reorder = np.argsort(self.beta_hat[0,:])
+        self.beta_hat = self.beta_hat[:,reorder]
+        self.alpha_hat = self.alpha_hat[reorder,:]
+
+        groups = np.zeros_like(self.groups_per_indiv, dtype=int)
+        for i in range(len(reorder)):
+            groups[self.groups_per_indiv == reorder[i]] = i
+        self.groups_per_indiv = groups
+
+
+    def _make_dataframes(self):
+        self.indivs_per_group = [[] for g in range(self.G)]
+        for i in range(self.N):
+            self.indivs_per_group[self.groups_per_indiv[i]].append(i)
+
+        col = ['g=%d'%i for i in range(self.G)]
+        row = ['k=%d'%i for i in range(self.K)]
+        self.beta_hat = pd.DataFrame(self.beta_hat, columns=col, index=row)
+
+        col = ['t=%d'%i for i in range(len(self.alpha_hat[0]))]
+        row = ['g=%d'%i for i in range(len(self.alpha_hat))]
+        self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
+
+
     def estimate_G(self, G):
         self.G = G
 
@@ -115,7 +140,8 @@ class GFE:
         self.Y = Y.values.reshape(N*T,1)
 
         self._initial_values()
-        prev_beta_hat = np.zeros_like(self.beta_hat)
+        # prev_beta_hat = np.zeros_like(self.beta_hat)
+        prev_groups_per_indiv = np.zeros_like(self.groups_per_indiv)
 
         for s in range(100):
             TrackTime("Fit a group")
@@ -130,38 +156,24 @@ class GFE:
             TrackTime("Estimate")
             self._update_values(p, X.columns)
 
-            # print((self.beta_hat-prev_beta_hat)**2)
-            if np.all((self.beta_hat-prev_beta_hat)**2 < 0.00001):
+            if np.all(self.groups_per_indiv == prev_groups_per_indiv):
                 break
-            prev_beta_hat = copy(self.beta_hat)
+            # if np.all((self.beta_hat-prev_beta_hat)**2 < 0.00001):
+            #     break
+            # prev_beta_hat = copy(self.beta_hat)
+            prev_groups_per_indiv = copy(self.groups_per_indiv)
 
         self.nr_iterations = s+1
 
         if self.slopes == Slopes.heterog:
-            reorder = np.argsort(self.beta_hat[0,:])
-            self.beta_hat = self.beta_hat[:,reorder]
-            self.alpha_hat = self.alpha_hat[reorder,:]
+            self._sort_groups()
 
-            groups = np.zeros_like(self.groups_per_indiv, dtype=int)
-            for i in range(len(reorder)):
-                groups[self.groups_per_indiv == reorder[i]] = i
-            self.groups_per_indiv = groups
-
-        self.indivs_per_group = [[] for g in range(self.G)]
-        for i in range(self.N):
-            self.indivs_per_group[self.groups_per_indiv[i]].append(i)
-
-        col = ['g=%d'%i for i in range(self.G)]
-        row = ['k=%d'%i for i in range(self.K)]
-        self.beta_hat = pd.DataFrame(self.beta_hat, columns=col, index=row)
-
-        col = ['t=%d'%i for i in range(len(self.alpha_hat[0]))]
-        row = ['n=%d'%i for i in range(len(self.alpha_hat))]
-        self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
+        self._make_dataframes()
 
 
 
-np.random.seed(0)
+
+# np.random.seed(0)
 N = 500
 T = 10
 K = 2
@@ -218,15 +230,15 @@ print("TRUE COEFFICIENTS:")
 print(dataset.slopes_df)
 print(dataset.effects_df)
 # print(dataset.groups_per_indiv)
-for group in dataset.indivs_per_group:
-    print(group)
+# for group in dataset.indivs_per_group:
+#     print(group)
 
 print("\n\nESTIMATED COEFFICIENTS:")
 print(gfe.beta_hat)
 print(gfe.alpha_hat)
 # print(gfe.groups_per_indiv)
-for group in gfe.indivs_per_group:
-    print(group)
+# for group in gfe.indivs_per_group:
+#     print(group)
 
 # group_similarity(dataset.groups_list, groups_list)
 
