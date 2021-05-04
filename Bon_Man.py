@@ -16,9 +16,7 @@ from lib.tracktime import TrackTime, TrackReport
 
 
 class GFE:
-    def __init__(self, slopes: Slopes, effects: Effects):
-        if effects != Effects.gr_tvar_fix:
-            raise RuntimeError("This form of fixed effects is not (yet) supported by this GFE estimator")
+    def __init__(self, slopes: Slopes):
         self.slopes = slopes
 
 
@@ -138,7 +136,7 @@ class GFE:
         self.K = len(X.columns)
 
         self.X = copy(X)
-        self.Y = Y.values.reshape(N*T,1)
+        self.Y = Y.values.reshape(self.N*self.T,1)
 
         self._initial_values()
         # prev_beta_hat = np.zeros_like(self.beta_hat)
@@ -200,92 +198,80 @@ class GFE:
         self.fitted_values = pd.DataFrame(self.fitted_values, index=index)
 
 
-def plot_residuals(fitted_values, residuals):
-    fig, ax = plt.subplots(figsize=(6,4))
-    ax.scatter(fitted_values, residuals, color = 'blue', s=2)
-    ax.axhline(0, color = 'r', ls = '--')
-    ax.set_xlabel('Predicted Values', fontsize = 12)
-    ax.set_ylabel('Residuals', fontsize = 12)
-    plt.show()
 
-def plot_fitted_values(feat_dim, true_values, fitted_values):
-    fitted_values = fitted_values.values if isinstance(fitted_values, pd.DataFrame) else fitted_values
-    fig, ax = plt.subplots(figsize=(6,4))
-    ax.plot(feat_dim, true_values, 'ok')
-    ax.plot(feat_dim, fitted_values, 'o', markersize=1)
-    ax.set_xlabel('First feature', fontsize = 12)
-    ax.legend(['True values', 'Fitted values'])
-    plt.show()
+def main():
+    from estimate import plot_residuals, plot_fitted_values
+
+    np.random.seed(0)
+    N = 500
+    T = 10
+    K = 2
 
 
-
-np.random.seed(0)
-N = 500
-T = 10
-K = 2
+    TrackTime("Simulate")
+    dataset = Dataset(N, T, K, G=7)
+    dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
 
 
-TrackTime("Simulate")
-dataset = Dataset(N, T, K, G=4)
-dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
+    TrackTime("Estimate")
+    x = dataset.data.drop(["y"], axis=1)
+    y = dataset.data["y"]
+
+    gfe = GFE(Slopes.heterog)
+    gfe.estimate_G(dataset.G)       #assume true value of G is known
+    gfe.fit(x, y)
+    gfe.predict()
 
 
-TrackTime("Estimate")
-x = dataset.data.drop(["y"], axis=1)
-y = dataset.data["y"]
-
-gfe = GFE(Slopes.heterog, Effects.gr_tvar_fix)
-gfe.estimate_G(dataset.G)       #assume true value of G is known
-gfe.fit(x, y)
-gfe.predict()
+    TrackTime("Plot")
+    plot_residuals(gfe.fitted_values, gfe.resids)
+    plot_fitted_values(x['feature0'], y, gfe.fitted_values)
 
 
-TrackTime("Plot")
-plot_residuals(gfe.fitted_values, gfe.resids)
-plot_fitted_values(x['feature0'], y, gfe.fitted_values)
+    TrackTime("Print")
+
+    print("TOOK %s ITERATIONS\n"%gfe.nr_iterations)
+
+    print("TRUE COEFFICIENTS:")
+    print(dataset.slopes_df)
+    # print(dataset.effects_df)
+    # print(dataset.groups_per_indiv)
+    # for group in dataset.indivs_per_group:
+    #     print(group)
+
+    print("\n\nESTIMATED COEFFICIENTS:")
+    print(gfe.beta_hat)
+    # print(gfe.alpha_hat)
+    # print(gfe.groups_per_indiv)
+    # for group in gfe.indivs_per_group:
+    #     print(group)
+
+    gfe.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
 
 
-TrackTime("Print")
+    if gfe.slopes == Slopes.homog:
+        TrackTime("Standard libraries")
 
-print("TOOK %s ITERATIONS\n"%gfe.nr_iterations)
+        # from linearmodels import PooledOLS
+        # mod = PooledOLS(y, x) 
+        # pooledOLS_res = mod.fit(cov_type='clustered', cluster_entity=True)
+        # print("\nPOOLED OLS ESTIMATION:"), print(pooledOLS_res.params)
 
-print("TRUE COEFFICIENTS:")
-print(dataset.slopes_df)
-# print(dataset.effects_df)
-# print(dataset.groups_per_indiv)
-# for group in dataset.indivs_per_group:
-#     print(group)
+        from linearmodels import RandomEffects
+        model_re = RandomEffects(y, x)
+        re_res = model_re.fit()
+        print("\nRANDOM EFFECTS ESTIMATION:"), print(re_res.params)
 
-print("\n\nESTIMATED COEFFICIENTS:")
-print(gfe.beta_hat)
-# print(gfe.alpha_hat)
-# print(gfe.groups_per_indiv)
-# for group in gfe.indivs_per_group:
-#     print(group)
-
-gfe.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
+        from linearmodels import PanelOLS
+        model_fe = PanelOLS(y, x, entity_effects = True)
+        fe_res = model_fe.fit()
+        print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
 
 
-if gfe.slopes == Slopes.homog:
-    TrackTime("Standard libraries")
+    print("\n")
+    TrackReport()
 
-    # from linearmodels import PooledOLS
-    # mod = PooledOLS(y, x) 
-    # pooledOLS_res = mod.fit(cov_type='clustered', cluster_entity=True)
-    # print("\nPOOLED OLS ESTIMATION:"), print(pooledOLS_res.params)
-
-    from linearmodels import RandomEffects
-    model_re = RandomEffects(y, x)
-    re_res = model_re.fit()
-    print("\nRANDOM EFFECTS ESTIMATION:"), print(re_res.params)
-
-    from linearmodels import PanelOLS
-    model_fe = PanelOLS(y, x, entity_effects = True)
-    fe_res = model_fe.fit()
-    print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
-
-
-print("\n")
-TrackReport()
+if __name__ == "__main__":
+    main()
 
 

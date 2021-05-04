@@ -241,75 +241,64 @@ class PSEUDO:
         self.fitted_values = pd.DataFrame(self.fitted_values, index=index)
 
 
-def plot_residuals(fitted_values, residuals):
-    fig, ax = plt.subplots(figsize=(6,4))
-    ax.scatter(fitted_values, residuals, color = 'blue', s=2)
-    ax.axhline(0, color = 'r', ls = '--')
-    ax.set_xlabel('Predicted Values', fontsize = 12)
-    ax.set_ylabel('Residuals', fontsize = 12)
-    plt.show()
 
-def plot_fitted_values(feat_dim, true_values, fitted_values):
-    fitted_values = fitted_values.values if isinstance(fitted_values, pd.DataFrame) else fitted_values
-    fig, ax = plt.subplots(figsize=(6,4))
-    ax.plot(feat_dim, true_values, 'ok')
-    ax.plot(feat_dim, fitted_values, 'o', markersize=1)
-    ax.set_xlabel('First feature', fontsize = 12)
-    ax.legend(['True values', 'Fitted values'])
-    plt.show()
+def main():
+    from estimate import plot_residuals, plot_fitted_values
+
+    np.random.seed(10)
+    N = 250
+    T = 100
+    K = 2
 
 
-
-np.random.seed(10)
-N = 250
-T = 100
-K = 2
+    TrackTime("Simulate")
+    dataset = Dataset(N, T, K, G=3)
+    dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
 
-TrackTime("Simulate")
-dataset = Dataset(N, T, K, G=3)
-dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
+    TrackTime("Estimate")
+    x = dataset.data.drop(["y"], axis=1)
+    y = dataset.data["y"]
+
+    pseudo = PSEUDO()
+    pseudo.estimate_G(dataset.G)    #assume true value of G is known
+    pseudo.fit(x,y)
+    pseudo.predict()
 
 
-TrackTime("Estimate")
-x = dataset.data.drop(["y"], axis=1)
-y = dataset.data["y"]
-
-pseudo = PSEUDO()
-pseudo.estimate_G(dataset.G)    #assume true value of G is known
-pseudo.fit(x,y)
-pseudo.predict()
+    TrackTime("Plot")
+    plot_residuals(pseudo.fitted_values, pseudo.resids)
+    plot_fitted_values(x['feature0'], y, pseudo.fitted_values)
 
 
-TrackTime("Plot")
-plot_residuals(pseudo.fitted_values, pseudo.resids)
-plot_fitted_values(x['feature0'], y, pseudo.fitted_values)
+    TrackTime("Print")
+
+    print("\n\nTRUE COEFFICIENTS:")
+    print(dataset.slopes_df)
+    # print(dataset.effects_df)
+    # print(dataset.groups_per_indiv)
+    # for group in dataset.indivs_per_group:
+    #     print(group)
+
+    print("\n\nESTIMATED COEFFICIENTS:")
+    print(pseudo.beta_hat)
+    # print(pseudo.alpha_hat)
+    # print(gfe.groups_per_indiv)
+    # for group in pseudo.indivs_per_group:
+    #     print(group)
+
+    pseudo.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
 
 
-TrackTime("Print")
-
-print("\n\nTRUE COEFFICIENTS:")
-print(dataset.slopes_df)
-# print(dataset.effects_df)
-# print(dataset.groups_per_indiv)
-# for group in dataset.indivs_per_group:
-#     print(group)
-
-print("\n\nESTIMATED COEFFICIENTS:")
-print(pseudo.beta_hat)
-# print(pseudo.alpha_hat)
-# print(gfe.groups_per_indiv)
-# for group in pseudo.indivs_per_group:
-#     print(group)
-
-pseudo.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
+    # from linearmodels import PanelOLS
+    # model_fe = PanelOLS(y, x, entity_effects = True)
+    # fe_res = model_fe.fit()
+    # print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
 
 
-# from linearmodels import PanelOLS
-# model_fe = PanelOLS(y, x, entity_effects = True)
-# fe_res = model_fe.fit()
-# print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
+    print("\n")
+    TrackReport()
 
+if __name__ == "__main__":
+    main()
 
-print("\n")
-TrackReport()
