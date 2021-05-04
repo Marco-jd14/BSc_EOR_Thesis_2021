@@ -18,20 +18,22 @@ from Lin_Ng_PSEUDO import PSEUDO
 from Lin_Ng_CKmeans import CK_means
 
 
-def plot_residuals(fitted_values, residuals):
+def plot_residuals(fitted_values, residuals, title):
     fig, ax = plt.subplots(figsize=(6,4))
     ax.scatter(fitted_values, residuals, color = 'blue', s=2)
     ax.axhline(0, color = 'r', ls = '--')
     ax.set_xlabel('Predicted Values', fontsize = 12)
     ax.set_ylabel('Residuals', fontsize = 12)
+    ax.set_title(title, fontsize=15)
     plt.show()
 
-def plot_fitted_values(feat_dim, true_values, fitted_values):
+def plot_fitted_values(feat_dim, true_values, fitted_values, title):
     fitted_values = fitted_values.values if isinstance(fitted_values, pd.DataFrame) else fitted_values
     fig, ax = plt.subplots(figsize=(6,4))
     ax.plot(feat_dim, true_values, 'ok')
     ax.plot(feat_dim, fitted_values, 'o', markersize=1)
     ax.set_xlabel('First feature', fontsize = 12)
+    ax.set_title(title, fontsize=15)
     ax.legend(['True values', 'Fitted values'])
     plt.show()
 
@@ -39,56 +41,60 @@ def plot_fitted_values(feat_dim, true_values, fitted_values):
 def main():
     np.random.seed(0)
     N = 250
-    T = 50
-    K = 2
+    T = 100
+    K = 3
 
+    #TODO: Make comments
+    #TODO: estimate G
 
     TrackTime("Simulate")
-    dataset = Dataset(N, T, K, G=7)
+    dataset = Dataset(N, T, K, G=3)
     dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
 
 
-    TrackTime("Estimate")
     x = dataset.data.drop(["y"], axis=1)
     y = dataset.data["y"]
 
-    # model = CK_means()
-    # model = PSEUDO()
-    model = GFE(Slopes.heterog)
-    model.estimate_G(dataset.G)    #assume true value of G is known
-    model.fit(x,y)
-    model.predict()
+    models = [CK_means(), PSEUDO(), GFE(Slopes.heterog)]
+    model_names = ["CK_means", "PSEUDO", "GFE"]
+
+    select = [2, 0]
+    for i in range(len(select)):
+        for j in select:
+            TrackTime(model_names[j])
+
+        print("\n%s:" %model_names[select[i]])
+        TrackTime(model_names[select[i]])
+        model = models[select[i]]
+
+        model.estimate_G(dataset.G)    #assume true value of G is known
+        model.fit(x,y)
+        model.predict()
+
+        TrackTime("Plot")
+        plot_residuals(model.fitted_values, model.resids, model_names[select[i]])
+        plot_fitted_values(x['feature0'], y, model.fitted_values, model_names[select[i]])
+
+        TrackTime("Print")
+        print("%s TOOK %s ITERATIONS"%(model_names[select[i]], model.nr_iterations))
+        model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=False)
 
 
-    TrackTime("Plot")
-    plot_residuals(model.fitted_values, model.resids)
-    plot_fitted_values(x['feature0'], y, model.fitted_values)
+    print("\n")
+    col = dataset.slopes_df.columns
+    index = pd.MultiIndex.from_product([["TRUE VALUES"] + [model_names[i] for i in select], ['k=%d'%i for i in range(dataset.K)]])#, names=["model", "k"])
+    final_df = dataset.slopes_df.values
 
-    #TODO: Make comments
+    for i in range(len(select)):
+        model = models[select[i]]
+        final_df = np.vstack([final_df, model.beta_hat.values])
+    final_df = pd.DataFrame(final_df, columns=col, index=index)
 
-    #TODO: estimate G
+    s = final_df.to_string()
+    for name in list(model_names[i] for i in select):
+        s = s.replace('\n%s'%name, '\n'+'-'*(15+10*dataset.G)+'\n%s'%name)
+    print(s)
 
-
-    TrackTime("Print")
-
-    #TODO: if model.hasattr
-    # print("\n\nTOOK %s ITERATIONS\n"%model.nr_iterations)
-
-    print("\n\nTRUE COEFFICIENTS:")
-    print(dataset.slopes_df)
-    # print(dataset.effects_df)
-    # print(dataset.groups_per_indiv)
-    # for group in dataset.indivs_per_group:
-    #     print(group)
-
-    print("\n\nESTIMATED COEFFICIENTS:")
-    print(model.beta_hat)
-    # print(model.alpha_hat)
-    # print(model.groups_per_indiv)
-    # for group in model.indivs_per_group:
-    #     print(group)
-
-    model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
 
 
     # from linearmodels import PanelOLS
