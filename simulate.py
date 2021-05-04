@@ -103,7 +103,7 @@ class Dataset:
             effects = effects_m
 
         col = ['t=%d'%i for i in range(len(effects[0]))]
-        row = ['n=%d'%i for i in range(len(effects))]
+        row = ['%c=%d'%('g' if len(effects)==self.G else 'n',i) for i in range(len(effects))]
         self.effects_df = pd.DataFrame(effects, columns=col, index=row)
         return effects_m
 
