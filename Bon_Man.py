@@ -59,7 +59,18 @@ class GFE:
                     self.groups_per_indiv[i] = g
 
             unused_g.discard(self.groups_per_indiv[i])
-        print(unused_g) if len(unused_g) != 0 else None
+
+        # If there is a group with no members, randomly assign onefrom each group to it.
+        if len(unused_g) > 0:
+            print("Empty groups:", unused_g)
+            biggest_group = np.argmax(np.bincount(self.groups_per_indiv))
+            used_g = set(range(self.G)) - unused_g
+            for empty_g in unused_g:
+                for g in used_g:
+                    group_members = np.arange(self.N)[self.groups_per_indiv == g]
+                    if len(group_members) > 5:
+                        indiv_to_change = np.random.choice(group_members, 1, replace=False)
+                        self.groups_per_indiv[indiv_to_change] = empty_g
 
 
     def _prepare_dummy_dataset(self):
@@ -143,16 +154,16 @@ class GFE:
         prev_groups_per_indiv = np.zeros_like(self.groups_per_indiv)
 
         for s in range(100):
-            TrackTime("Fit a group")
+            # TrackTime("Fit a group")
             self._group_assignment()
 
-            TrackTime("Make dummy labels")
+            # TrackTime("Make dummy labels")
             X = self._prepare_dummy_dataset()
 
-            TrackTime("Least Squares")
+            # TrackTime("Least Squares")
             p, _, _, _ = lstsq(X, self.Y)
 
-            TrackTime("Estimate")
+            # TrackTime("Estimate")
             self._update_values(p, X.columns)
 
             if np.all(self.groups_per_indiv == prev_groups_per_indiv):
@@ -170,15 +181,16 @@ class GFE:
         self._make_dataframes()
 
 
-    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group):
+    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group, verbose=True):
         correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
-        print("\n%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
+        print("%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
 
-        for g in range(self.G):
-            true_g = set(true_indivs_per_group[g])
-            g_hat = set(self.indivs_per_group[g])
-            print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
-            print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
+        if verbose:
+            for g in range(self.G):
+                true_g = set(true_indivs_per_group[g])
+                g_hat = set(self.indivs_per_group[g])
+                print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
+                print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
 
 
     def predict(self):
@@ -209,7 +221,7 @@ def main():
 
 
     TrackTime("Simulate")
-    dataset = Dataset(N, T, K, G=7)
+    dataset = Dataset(N, T, K, G=4)
     dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
 
 
