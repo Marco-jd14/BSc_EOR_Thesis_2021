@@ -145,6 +145,17 @@ class CK_means:
         self._make_dataframes()
 
 
+    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group):
+        correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
+        print("\n%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
+
+        for g in range(self.G):
+            true_g = set(true_indivs_per_group[g])
+            g_hat = set(self.indivs_per_group[g])
+            print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
+            print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
+
+
 
 np.random.seed(0)
 N = 250
@@ -166,8 +177,6 @@ ck_means.estimate_G(dataset.G)    #assume true value of G is known
 ck_means.fit(x,y)
 
 
-#TODO: Move certain parts of code to functions
-
 #TODO: Make comments
 
 #TODO: pseudo.predict()
@@ -185,17 +194,20 @@ print("\n\nTOOK %s ITERATIONS\n"%ck_means.nr_iterations)
 
 print("\n\nTRUE COEFFICIENTS:")
 print(dataset.slopes_df)
-print(dataset.effects_df)
+# print(dataset.effects_df)
 # print(dataset.groups_per_indiv)
-for group in dataset.indivs_per_group:
-    print(group)
+# for group in dataset.indivs_per_group:
+#     print(group)
 
 print("\n\nESTIMATED COEFFICIENTS:")
 print(ck_means.beta_hat)
-print(ck_means.alpha_hat)
+# print(ck_means.alpha_hat)
 # print(gfe.groups_per_indiv)
-for group in ck_means.indivs_per_group:
-    print(group)
+# for group in ck_means.indivs_per_group:
+#     print(group)
+
+ck_means.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
+
 
 # from linearmodels import PanelOLS
 # model_fe = PanelOLS(y, x, entity_effects = True)

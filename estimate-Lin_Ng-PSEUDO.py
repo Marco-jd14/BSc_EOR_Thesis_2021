@@ -210,6 +210,18 @@ class PSEUDO:
         self._final_estimate(gamma_stars_per_k[k_star], q_hat[:,k_star])
 
 
+    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group):
+        correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
+        print("\n%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
+
+        for g in range(self.G):
+            true_g = set(true_indivs_per_group[g])
+            g_hat = set(self.indivs_per_group[g])
+            print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
+            print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
+
+
+
 np.random.seed(10)
 N = 250
 T = 100
@@ -235,17 +247,20 @@ TrackTime("Print")
 
 print("\n\nTRUE COEFFICIENTS:")
 print(dataset.slopes_df)
-print(dataset.effects_df)
+# print(dataset.effects_df)
 # print(dataset.groups_per_indiv)
-for group in dataset.indivs_per_group:
-    print(group)
+# for group in dataset.indivs_per_group:
+#     print(group)
 
 print("\n\nESTIMATED COEFFICIENTS:")
 print(pseudo.beta_hat)
-print(pseudo.alpha_hat)
+# print(pseudo.alpha_hat)
 # print(gfe.groups_per_indiv)
-for group in pseudo.indivs_per_group:
-    print(group)
+# for group in pseudo.indivs_per_group:
+#     print(group)
+
+pseudo.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
+
 
 # from linearmodels import PanelOLS
 # model_fe = PanelOLS(y, x, entity_effects = True)
