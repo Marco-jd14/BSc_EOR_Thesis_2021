@@ -29,7 +29,7 @@ class CK_means:
 
 
     def _calc_beta_hat(self, groups):
-        TrackTime("_calc_beta_hat")
+        # TrackTime("_calc_beta_hat")
         for g in range(self.G):
             selection = np.where(groups==g)[0]
 
@@ -41,7 +41,7 @@ class CK_means:
             y = self.Y.values[selection_indices]
 
             self.beta_hat[:,g], _, _, _ = lstsq(x, y)
-        TrackTime("Estimate")
+        # TrackTime("Estimate")
 
 
     def _ck_means(self):
@@ -54,12 +54,12 @@ class CK_means:
             for i in range(self.N):
                 x = self.X.values[i*self.T:(i+1)*self.T]
                 y = self.Y.values[i*self.T:(i+1)*self.T]
-                TrackTime("Calculate SSR")
+                # TrackTime("Calculate SSR")
                 for g in range(self.G):
                     ssr_groups[i,g] = self._ssr(i,g, x, y)
-                TrackTime("Select indivs")
+                # TrackTime("Select indivs")
 
-            TrackTime("Estimate")
+            # TrackTime("Estimate")
             best_fit = np.min(ssr_groups,axis=1)
             for g in range(self.G):
                 groups[ssr_groups[:,g] == best_fit] = g
@@ -145,15 +145,16 @@ class CK_means:
         self._make_dataframes()
 
 
-    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group):
+    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group, verbose=True):
         correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
-        print("\n%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
+        print("%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
 
-        for g in range(self.G):
-            true_g = set(true_indivs_per_group[g])
-            g_hat = set(self.indivs_per_group[g])
-            print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
-            print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
+        if verbose:
+            for g in range(self.G):
+                true_g = set(true_indivs_per_group[g])
+                g_hat = set(self.indivs_per_group[g])
+                print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
+                print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
 
 
     def predict(self):

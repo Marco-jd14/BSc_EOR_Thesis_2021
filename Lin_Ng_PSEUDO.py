@@ -24,7 +24,7 @@ class PSEUDO:
 
         nr_gamma_options = len(q_hat)-1-2*(self.min_group_size-1)
         if nr_gamma_options <= 0:
-            print(nr_gamma_options)
+            print("Too few group members to split:", len(q_hat))
             return gamma_star
 
         gamma_range = np.zeros(nr_gamma_options)
@@ -46,23 +46,23 @@ class PSEUDO:
     def _ssr(self, gamma, q_hat, left_n):
         partition = [np.arange(len(q_hat))[q_hat <= gamma]+left_n, np.arange(len(q_hat))[q_hat > gamma]+left_n]
 
-        TrackTime("Partition indices")
+        # TrackTime("Partition indices")
         partition_indices = [np.zeros(len(partition[0])*self.T,dtype=int), np.zeros(len(partition[1])*self.T, dtype=int)]
         for k in range(2):
             for i in range(len(partition[k])):
                 partition_indices[k][i*self.T:(i+1)*self.T] = np.arange(self.T) + partition[k][i]*self.T
 
-        TrackTime("Partition selection")
+        # TrackTime("Partition selection")
         x1 = self.X.values[partition_indices[0],:] # ~35x faster than  x1 = self.X.loc[partition[0],:]
         x2 = self.X.values[partition_indices[1],:]
         y1 = self.Y.values[partition_indices[0]]
         y2 = self.Y.values[partition_indices[1]]
 
-        TrackTime("gamma SSR")
+        # TrackTime("gamma SSR")
         beta_hat_1, _, _, _ = lstsq(x1, y1)
         beta_hat_2, _, _, _ = lstsq(x2, y2)
 
-        TrackTime("Estimate")
+        # TrackTime("Estimate")
         residuals1 = y1 - x1 @ beta_hat_1
         residuals2 = y2 - x2 @ beta_hat_2
 
@@ -140,7 +140,7 @@ class PSEUDO:
 
 
     def _final_estimate(self, gamma_stars, q_hat):
-        TrackTime("Calc beta_hats")
+        # TrackTime("Calc beta_hats")
 
         self.groups_per_indiv = np.zeros(self.N, dtype=int)
         self.alpha_hat = np.zeros(self.N)
@@ -195,6 +195,7 @@ class PSEUDO:
         self.T = len(set(self.X.index.get_level_values(1)))
         self.K = len(self.X.columns)
         self.min_group_size = 10
+        self.nr_iterations = self.K
 
         q_hat = np.zeros((self.N,self.K))
         for i in range(self.N):
@@ -211,15 +212,16 @@ class PSEUDO:
         self._final_estimate(gamma_stars_per_k[k_star], q_hat[:,k_star])
 
 
-    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group):
+    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group, verbose=True):
         correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
-        print("\n%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
+        print("%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
 
-        for g in range(self.G):
-            true_g = set(true_indivs_per_group[g])
-            g_hat = set(self.indivs_per_group[g])
-            print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
-            print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
+        if verbose:
+            for g in range(self.G):
+                true_g = set(true_indivs_per_group[g])
+                g_hat = set(self.indivs_per_group[g])
+                print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
+                print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
 
 
     def predict(self):
