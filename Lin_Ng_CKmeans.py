@@ -115,6 +115,8 @@ class CK_means:
         self.G = G
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
+        if isinstance(Y, pd.DataFrame):
+            Y = Y.iloc[:,0]
         #demean data:
         self.x_bar = X.groupby('n').mean()
         self.y_bar = Y.groupby('n').mean()
@@ -164,6 +166,9 @@ class CK_means:
 
         for g in range(self.G):
             selection = np.where(self.groups_per_indiv == g)[0]
+            if len(selection) == 0:
+                print("Group %d is empty"%g)
+                continue
             selection_indices = np.zeros(len(selection)*self.T, dtype=int)
             for i in range(len(selection)):
                 selection_indices[i*self.T:(i+1)*self.T] = np.arange(self.T) + selection[i]*self.T
@@ -202,8 +207,8 @@ def main():
 
 
     TrackTime("Plot")
-    plot_residuals(ck_means.fitted_values, ck_means.resids)
-    plot_fitted_values(x['feature0'], y, ck_means.fitted_values)
+    plot_residuals(ck_means.fitted_values, ck_means.resids, "CK_means")
+    plot_fitted_values(x['feature0'], y, ck_means.fitted_values, "CK_means")
 
     #TODO: Make comments
 

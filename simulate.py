@@ -134,6 +134,8 @@ class Dataset:
         else:
             self.G = 1
             groups_mat = np.ones((self.G, self.N), dtype=int)
+            self.groups_per_indiv = np.zeros(self.N, dtype=int)
+            self.indivs_per_group = [np.arange(self.N)]
 
         effects_m = self.sim_effects(groups_mat)
 

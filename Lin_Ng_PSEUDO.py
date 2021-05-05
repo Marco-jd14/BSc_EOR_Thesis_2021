@@ -185,6 +185,8 @@ class PSEUDO:
         self.G = G
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
+        if isinstance(Y, pd.DataFrame):
+            Y = Y.iloc[:,0]
         #demean data:
         self.x_bar = X.groupby('n').mean()
         self.y_bar = Y.groupby('n').mean()
@@ -269,8 +271,8 @@ def main():
 
 
     TrackTime("Plot")
-    plot_residuals(pseudo.fitted_values, pseudo.resids)
-    plot_fitted_values(x['feature0'], y, pseudo.fitted_values)
+    plot_residuals(pseudo.fitted_values, pseudo.resids, "PSEUDO")
+    plot_fitted_values(x['feature0'], y, pseudo.fitted_values, "PSEUDO")
 
 
     TrackTime("Print")
