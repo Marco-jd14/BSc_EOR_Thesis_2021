@@ -62,15 +62,22 @@ class GFE:
 
         # If there is a group with no members, randomly assign onefrom each group to it.
         if len(unused_g) > 0:
-            print("Empty groups:", unused_g)
+            print("%s: Empty groups:"%self.s, unused_g)
             biggest_group = np.argmax(np.bincount(self.groups_per_indiv))
             used_g = set(range(self.G)) - unused_g
             for empty_g in unused_g:
-                for g in used_g:
-                    group_members = np.arange(self.N)[self.groups_per_indiv == g]
-                    if len(group_members) > 5:
-                        indiv_to_change = np.random.choice(group_members, 1, replace=False)
-                        self.groups_per_indiv[indiv_to_change] = empty_g
+                group_members = np.arange(self.N)[self.groups_per_indiv == biggest_group]
+                indiv_to_change = np.random.choice(group_members, self.G, replace=True)
+                self.groups_per_indiv[indiv_to_change] = empty_g
+
+                # for g in used_g:
+                #     group_members = np.arange(self.N)[self.groups_per_indiv == g]
+                #     if len(group_members) > 5:
+                #         indiv_to_change = np.random.choice(group_members, 1, replace=False)
+                #         self.groups_per_indiv[indiv_to_change] = empty_g
+            self.unused_g = unused_g
+        else:
+            self.unused_g = []
 
 
     def _prepare_dummy_dataset(self):
@@ -121,6 +128,9 @@ class GFE:
         groups = np.zeros_like(self.groups_per_indiv, dtype=int)
         for i in range(len(reorder)):
             groups[self.groups_per_indiv == reorder[i]] = i
+            if reorder[i] in self.unused_g:
+                print("Group %d became group %d" %(reorder[i],i))
+
         self.groups_per_indiv = groups
 
 
@@ -153,7 +163,7 @@ class GFE:
         # prev_beta_hat = np.zeros_like(self.beta_hat)
         prev_groups_per_indiv = np.zeros_like(self.groups_per_indiv)
 
-        for s in range(100):
+        for self.s in range(100):
             # TrackTime("Fit a group")
             self._group_assignment()
 
@@ -173,7 +183,7 @@ class GFE:
             # prev_beta_hat = copy(self.beta_hat)
             prev_groups_per_indiv = copy(self.groups_per_indiv)
 
-        self.nr_iterations = s+1
+        self.nr_iterations = self.s+1
 
         if self.slopes == Slopes.heterog:
             self._sort_groups()
@@ -236,8 +246,8 @@ def main():
 
 
     TrackTime("Plot")
-    plot_residuals(gfe.fitted_values, gfe.resids)
-    plot_fitted_values(x['feature0'], y, gfe.fitted_values)
+    plot_residuals(gfe.fitted_values, gfe.resids, "GFE")
+    plot_fitted_values(x['feature0'], y, gfe.fitted_values, "GFE")
 
 
     TrackTime("Print")
