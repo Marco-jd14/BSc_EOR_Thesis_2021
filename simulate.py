@@ -89,16 +89,20 @@ class Dataset:
             effects_m = effects @ np.ones((1, self.T))
 
         elif self.effects == Effects.ind_fix:
-            effects = np.random.uniform(0, 50, size=(self.N, 1))
+            # effects = np.random.uniform(0, 50, size=(self.N, 1))
+            effects = np.random.normal(1, 1, size=(self.N, 1))
             effects_m = effects @ np.ones((1, self.T))
 
         elif self.effects == Effects.gr_tvar_fix:
-            effects = np.random.uniform(0, 50, size=(self.G, self.T))
+            # effects = np.random.uniform(0, 50, size=(self.G, self.T))
+            effects = np.random.normal(1, 1, size=(self.G, self.T))
             effects_m = groups_mat.T @ effects
 
         elif self.effects == Effects.both_fix:
-            indiv_fix_eff = np.random.uniform(0, 50, size=(self.N, 1)) @ np.ones((1, self.T))
-            group_fix_eff = np.random.uniform(0, 50, size=(self.G, self.T))
+            # indiv_fix_eff = np.random.uniform(0, 50, size=(self.N, 1)) @ np.ones((1, self.T))
+            # group_fix_eff = np.random.uniform(0, 50, size=(self.G, self.T))
+            indiv_fix_eff = np.random.normal(1, 1, size=(self.N, 1)) @ np.ones((1, self.T))
+            group_fix_eff = np.random.normal(1, 1, size=(self.G, self.T))
             effects_m = groups_mat.T @ group_fix_eff + indiv_fix_eff
             effects = effects_m
 
@@ -113,7 +117,9 @@ class Dataset:
             B = np.random.uniform(0.5,3, size=(self.K, 1))
             col = ['g=%d'%i for i in range(1)]
         elif self.slopes == Slopes.heterog:
-            B = np.random.uniform(0.5,self.G+np.sqrt(self.G), size=(self.K, self.G))
+            # B = np.random.uniform(0.5,self.G+np.sqrt(self.G), size=(self.K, self.G))
+            # B = np.random.uniform(-self.G/2, self.G/2, size=(self.K, self.G))
+            B = np.random.uniform(-(self.G+np.sqrt(self.G))/2,(self.G+np.sqrt(self.G))/2, size=(self.K, self.G))
             col = ['g=%d'%i for i in range(self.G)]
             B = np.sort(B, axis=1)
 
@@ -121,7 +127,7 @@ class Dataset:
         self.slopes_df = pd.DataFrame(B, columns=col, index=row)
 
 
-    def simulate(self, effects: Effects, slopes: Slopes, var: Variance):
+    def simulate(self, effects: Effects, slopes: Slopes, var: Variance, slopes_df = 0):
         self.reset()
 
         self.effects = effects
@@ -137,17 +143,23 @@ class Dataset:
             self.groups_per_indiv = np.zeros(self.N, dtype=int)
             self.indivs_per_group = [np.arange(self.N)]
 
+        self.groups_mat = groups_mat
         effects_m = self.sim_effects(groups_mat)
+        self.effects_m = effects_m
 
-        X_range = [10, 40]
-        X = np.random.uniform(X_range[0], X_range[1], size=(self.N, self.T, self.K))
+        # X_range = [10, 40]
+        # X = np.random.uniform(X_range[0], X_range[1], size=(self.N, self.T, self.K))
+        X = np.random.normal(1, 3, size=(self.N, self.T, self.K))
         #TODO: fix correlation
         # if self.effects == Effects.ind_fix:
         #     X[:,:,0] += effects_m.values       #create correlation between regressor and ommitted variable (fixed effects)
 
         # print(pd.DataFrame(np.hstack((indiv_fixed_effects,X[:,:,0]))).corr())
 
-        self.sim_slopes()
+        if not np.all(slopes_df == 0):
+            self.slopes_df = slopes_df
+        else:
+            self.sim_slopes()
 
         if self.slopes == Slopes.homog:
             Y = X @ self.slopes_df.values.reshape(self.K)
@@ -159,14 +171,15 @@ class Dataset:
 
         Y += effects_m
 
-        if self.var == Variance.heterosk:
-            heterosk = (X[:,:,0]/np.mean(X[:,:,0])) #/np.sqrt(K)
-            corr = heterosk
-        elif self.var == Variance.homosk:
-            homosk = np.ones((self.N, self.T))*3
-            corr = homosk
+        # if self.var == Variance.heterosk:
+        #     heterosk = (X[:,:,0]/np.mean(X[:,:,0])) #/np.sqrt(K)
+        #     corr = heterosk
+        # elif self.var == Variance.homosk:
+        #     homosk = np.ones((self.N, self.T))*3
+        #     corr = homosk
 
-        errors = np.random.normal(0, np.sqrt(np.mean(Y))*corr)
+        # errors = np.random.normal(0, np.sqrt(np.mean(Y))*corr)
+        errors = np.random.normal(0, 1, size=(self.N, self.T))
         Y += errors
 
         index = pd.MultiIndex.from_product([np.arange(self.N), np.arange(self.T)], names=["n", "t"])
@@ -174,4 +187,28 @@ class Dataset:
         Y = Y.reshape(self.N*self.T, 1)
         X = X.reshape(self.N*self.T, self.K)
         self.data = pd.DataFrame(np.hstack((Y, X)), columns=['y'] + features, index=index)
+
+
+    def re_simulate(self):
+        X = np.random.normal(1, 3, size=(self.N, self.T, self.K))
+
+        if self.slopes == Slopes.homog:
+            Y = X @ self.slopes_df.values.reshape(self.K)
+        elif self.slopes == Slopes.heterog:
+            Y = np.zeros((self.N, self.T))
+            temp = X @ self.slopes_df.values
+            for g in range(self.G):
+                Y += temp[:,:,g] * self.groups_mat.T[:,g].reshape(self.N, 1)
+
+        Y += self.effects_m
+
+        errors = np.random.normal(0, 1, size=(self.N, self.T))
+        Y += errors
+
+        index = pd.MultiIndex.from_product([np.arange(self.N), np.arange(self.T)], names=["n", "t"])
+        features = ['feature%d'%i for i in range(self.K)]
+        Y = Y.reshape(self.N*self.T, 1)
+        X = X.reshape(self.N*self.T, self.K)
+        self.data = pd.DataFrame(np.hstack((Y, X)), columns=['y'] + features, index=index)
+
 
