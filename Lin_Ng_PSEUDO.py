@@ -21,12 +21,13 @@ class PSEUDO:
         pass
 
 
-    def _cluster_regressor(self, q_hat, left_n):
+    def _cluster_regressor(self, q_hat, left_n, verbose):
         gamma_star = [np.Inf, np.Inf, 0]
 
         nr_gamma_options = len(q_hat)-1-2*(self.min_group_size-1)
         if nr_gamma_options <= 0:
-            print("Too few group members to split:", len(q_hat))
+            if verbose:
+                print("Too few group members to split:", len(q_hat))
             return gamma_star
 
         gamma_range = np.zeros(nr_gamma_options)
@@ -71,9 +72,9 @@ class PSEUDO:
         return residuals1@residuals1.T, residuals2@residuals2.T
 
 
-    def _split_groups_in_half(self, i, gamma_stars, q_hat_k):
+    def _split_groups_in_half(self, i, gamma_stars, q_hat_k, verbose):
         if i==0:
-            new_gammas = [self._cluster_regressor(q_hat_k, 0)]
+            new_gammas = [self._cluster_regressor(q_hat_k, 0, verbose)]
         else:
             left_n = 0
             new_gammas = []
@@ -85,7 +86,7 @@ class PSEUDO:
                 else:
                     rel_q_hat = q_hat_k[np.all([q_hat_k > gamma_stars[j-1][2], q_hat_k <= gamma_stars[j][2]],axis=0)]
 
-                gamma_star = self._cluster_regressor(rel_q_hat, left_n)
+                gamma_star = self._cluster_regressor(rel_q_hat, left_n, verbose)
                 new_gammas.append(gamma_star)
                 left_n += len(rel_q_hat)
 
@@ -186,7 +187,7 @@ class PSEUDO:
     def estimate_G(self, G):
         self.G = G
 
-    def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
+    def fit(self, X: pd.DataFrame, Y: pd.DataFrame, verbose=True):
         if isinstance(Y, pd.DataFrame):
             Y = Y.iloc[:,0]
 
@@ -209,7 +210,7 @@ class PSEUDO:
         gamma_stars_per_k = [[] for i in range(self.K)]
         for k in range(self.K):
             for i in range(int(np.ceil(np.log2(self.G)))):
-                gamma_stars_per_k[k] = self._split_groups_in_half(i, gamma_stars_per_k[k], q_hat[:,k])
+                gamma_stars_per_k[k] = self._split_groups_in_half(i, gamma_stars_per_k[k], q_hat[:,k], verbose)
 
         k_star = self._calc_k_star(gamma_stars_per_k)
 
@@ -309,11 +310,13 @@ def main():
 
         TrackTime("Estimate")
         model.estimate_G(dataset.G)    #assume true value of G is known
-        model.fit(x,y)
         if M == 1:
+            model.fit(x,y,verbose=True)
             print("\nTook %d iterations"%model.nr_iterations)
             model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
             print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
+        else:
+            model.fit(x,y,verbose=False)
 
 
         TrackTime("Save results")
