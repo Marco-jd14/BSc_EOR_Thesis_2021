@@ -7,8 +7,10 @@ Created on Wed Apr 28 11:02:00 2021
 
 import pandas as pd
 import numpy as np
+import os.path
+import sys
+import pickle
 from scipy.linalg import lstsq
-import matplotlib.pyplot as plt
 
 from simulate import Effects, Slopes, Variance, Dataset
 from lib.tracktime import TrackTime, TrackReport
@@ -222,7 +224,7 @@ class PSEUDO:
             for g in range(self.G):
                 true_g = set(true_indivs_per_group[g])
                 g_hat = set(self.indivs_per_group[g])
-                print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
+                print("g=%d  \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
                 print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
 
 
@@ -247,61 +249,105 @@ class PSEUDO:
 
 
 def main():
-    from estimate import plot_residuals, plot_fitted_values
+    from estimate import plot_residuals, plot_fitted_values, plot_clusters
+    from Bon_Man import Result
 
-    np.random.seed(10)
-    N = 250
-    T = 100
+    np.random.seed(0)
+    N = 100
+    T = 50
+    G = 3
     K = 2
+    M = 100
+    filename = "estimates_pseudo_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
+
+
+    train = 1
+    if not train:
+        load_results(filename)
+        sys.exit(0)
+
+
+    # B = np.array([[0.3, 0.9]])
+    # B = np.array([[0.3, 0.5, 0.8]])
+    # B = np.array([[0.1, 2/3], [0.3, 0.6]])
+    B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
+
+    # B = np.array([[0.55, 0.65]])
+    # B = np.array([[0.4, 0.5, 0.8]])
+    # B = np.array([[0.3, 0.4], [0.4, 0.5]])
+    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
+    col = ['g=%d'%i for i in range(G)]
+    row = ['k=%d'%i for i in range(K)]
+    slopes_df = pd.DataFrame(B, columns=col, index=row)
 
 
     TrackTime("Simulate")
-    dataset = Dataset(N, T, K, G=3)
-    dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk)
+    dataset = Dataset(N, T, K, G=G)
+    dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk, slopes_df)
+    model = PSEUDO()
+
+    G_MAX = G
+    slopes_ests = np.zeros((M, K, G_MAX))
+    groups_ests = np.zeros((M,N), dtype=int)
+    bar_length = 30
+    for m in range(M):
+        if (m) % 1 == 0:
+            percent = 100.0*m/(M-1)
+            sys.stdout.write("\rExperiment progress: [{:{}}] {:>3}%".format('='*int(percent/(100.0/bar_length)),bar_length, int(percent)))
+            sys.stdout.flush()
+
+        TrackTime("Re-simulate")
+        dataset.re_simulate()
+
+        x = dataset.data.drop(["y"], axis=1)
+        y = dataset.data["y"]
+
+        TrackTime("Estimate")
+        model.estimate_G(dataset.G)    #assume true value of G is known
+        if M == 1:
+            model.fit(x,y,verbose=True)
+            print("\nTook %d iterations"%model.nr_iterations)
+            model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
+            print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
+        else:
+            model.fit(x,y,verbose=False)
+
+        TrackTime("Save results")
+        slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_MAX-model.G))))
+        groups_ests[m,:] = model.groups_per_indiv
 
 
-    TrackTime("Estimate")
-    x = dataset.data.drop(["y"], axis=1)
-    y = dataset.data["y"]
+    TrackTime("Results")
+    result = Result(dataset.slopes_df, slopes_ests, dataset.groups_per_indiv, groups_ests)
 
-    pseudo = PSEUDO()
-    pseudo.estimate_G(dataset.G)    #assume true value of G is known
-    pseudo.fit(x,y)
-    pseudo.predict()
+    with open(filename, 'wb') as output:
+        pickle.dump(result, output, pickle.HIGHEST_PROTOCOL)
 
-
-    TrackTime("Plot")
-    plot_residuals(pseudo.fitted_values, pseudo.resids, "PSEUDO")
-    plot_fitted_values(x['feature0'], y, pseudo.fitted_values, "PSEUDO")
-
-
-    TrackTime("Print")
-
-    print("\n\nTRUE COEFFICIENTS:")
-    print(dataset.slopes_df)
-    # print(dataset.effects_df)
-    # print(dataset.groups_per_indiv)
-    # for group in dataset.indivs_per_group:
-    #     print(group)
-
-    print("\n\nESTIMATED COEFFICIENTS:")
-    print(pseudo.beta_hat)
-    # print(pseudo.alpha_hat)
-    # print(gfe.groups_per_indiv)
-    # for group in pseudo.indivs_per_group:
-    #     print(group)
-
-    pseudo.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
-
-
-    # from linearmodels import PanelOLS
-    # model_fe = PanelOLS(y, x, entity_effects = True)
-    # fe_res = model_fe.fit()
-    # print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
-
+    load_results(filename)
 
     print("\n")
     TrackReport()
+
+
+
+def load_results(filename):
+    if os.path.isfile(filename):
+        with open(filename, 'rb') as output:
+            result = pickle.load(output)
+
+    print("\n\nTRUE COEFFICIENTS:")
+    print(result.slopes_true)
+
+    result.RMSE()
+    print("\nRMSE: %.4f\n" %(result.RMSE*100))
+
+    result.confusion_mat_groups()
+    print(result.conf_mat, "\n")
+
+    result.conf_interval(0.05)
+    print(result.summary)
+
+
 
 if __name__ == "__main__":
     main()

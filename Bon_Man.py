@@ -7,9 +7,11 @@ Created on Sun Apr 11 16:03:51 2021
 
 import pandas as pd
 import numpy as np
+import os.path
+import sys
+import pickle
 from copy import copy
 from scipy.linalg import lstsq
-import matplotlib.pyplot as plt
 
 from simulate import Effects, Slopes, Variance, Dataset
 from lib.tracktime import TrackTime, TrackReport
@@ -40,9 +42,7 @@ class GFE:
         self.groups_per_indiv = np.zeros(self.N, dtype=int)
 
 
-    def _group_assignment(self):
-        unused_g = set(range(self.G))
-
+    def _group_assignment(self, verbose):
         for i in range(self.N):
             best_g_val = np.Inf
             if self.slopes == Slopes.homog:
@@ -58,26 +58,26 @@ class GFE:
                     best_g_val = fit
                     self.groups_per_indiv[i] = g
 
-            unused_g.discard(self.groups_per_indiv[i])
+        # self.indivs_per_group = [[] for g in range(self.G)]
+        # for i in range(self.N):
+        #     self.indivs_per_group[self.groups_per_indiv[i]].append(i)
 
-        # If there is a group with no members, randomly assign onefrom each group to it.
-        if len(unused_g) > 0:
-            print("%s: Empty groups:"%self.s, unused_g)
-            biggest_group = np.argmax(np.bincount(self.groups_per_indiv))
-            used_g = set(range(self.G)) - unused_g
-            for empty_g in unused_g:
+        # Make sure each group has at least 5 members
+        for g in range(self.G):
+            group_size = np.count_nonzero(self.groups_per_indiv == g) #len(self.indivs_per_group[g])
+            if group_size < 5:
+                if verbose:
+                    print("%s: Small group:"%self.s, g)
+
+                # Choose 1 member from each group with > 5 members for the small group
+                # Fill group to 5 members from biggest group
+                biggest_group = np.argmax(np.bincount(self.groups_per_indiv))
                 group_members = np.arange(self.N)[self.groups_per_indiv == biggest_group]
-                indiv_to_change = np.random.choice(group_members, self.G, replace=True)
-                self.groups_per_indiv[indiv_to_change] = empty_g
-
-                # for g in used_g:
-                #     group_members = np.arange(self.N)[self.groups_per_indiv == g]
-                #     if len(group_members) > 5:
-                #         indiv_to_change = np.random.choice(group_members, 1, replace=False)
-                #         self.groups_per_indiv[indiv_to_change] = empty_g
-            self.unused_g = unused_g
-        else:
-            self.unused_g = []
+                indiv_to_change = np.random.choice(group_members, 5-group_size, replace=False)
+                self.groups_per_indiv[indiv_to_change] = g
+                # for i in indiv_to_change:
+                #     self.indivs_per_group[biggest_group].remove(i)
+                # self.indivs_per_group[g].append(indiv_to_change)
 
 
     def _prepare_dummy_dataset(self):
@@ -120,7 +120,7 @@ class GFE:
             i += 1
 
 
-    def _sort_groups(self):
+    def _sort_groups(self, verbose):
         reorder = np.argsort(self.beta_hat[0,:])
         self.beta_hat = self.beta_hat[:,reorder]
         self.alpha_hat = self.alpha_hat[reorder,:]
@@ -128,8 +128,6 @@ class GFE:
         groups = np.zeros_like(self.groups_per_indiv, dtype=int)
         for i in range(len(reorder)):
             groups[self.groups_per_indiv == reorder[i]] = i
-            if reorder[i] in self.unused_g:
-                print("Group %d became group %d" %(reorder[i],i))
 
         self.groups_per_indiv = groups
 
@@ -151,7 +149,7 @@ class GFE:
     def estimate_G(self, G):
         self.G = G
 
-    def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
+    def fit(self, X: pd.DataFrame, Y: pd.DataFrame, verbose=True):
         self.N = len(set(X.index.get_level_values(0)))
         self.T = len(set(X.index.get_level_values(1)))
         self.K = len(X.columns)
@@ -165,7 +163,7 @@ class GFE:
 
         for self.s in range(100):
             # TrackTime("Fit a group")
-            self._group_assignment()
+            self._group_assignment(verbose)
 
             # TrackTime("Make dummy labels")
             X = self._prepare_dummy_dataset()
@@ -186,7 +184,7 @@ class GFE:
         self.nr_iterations = self.s+1
 
         if self.slopes == Slopes.heterog:
-            self._sort_groups()
+            self._sort_groups(verbose)
 
         self._make_dataframes()
 
@@ -195,11 +193,11 @@ class GFE:
         correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
         print("%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
 
-        if verbose:
+        if verbose and self.G == len(true_indivs_per_group):
             for g in range(self.G):
                 true_g = set(true_indivs_per_group[g])
                 g_hat = set(self.indivs_per_group[g])
-                print("g=%d \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
+                print("g=%d  \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
                 print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
 
 
@@ -220,78 +218,155 @@ class GFE:
         self.fitted_values = pd.DataFrame(self.fitted_values, index=index)
 
 
+class Result:
+    def __init__(self, slopes_true, slopes_ests, groups_true, groups_ests):
+        self.M = len(groups_ests)
+        self.N = len(groups_ests[0])
+        self.K = len(slopes_true)
+        self.G = len(slopes_true.columns)
+
+        self.G_MAX = np.max(groups_ests)+1
+        self.slopes_ests = slopes_ests[:,:,:self.G_MAX]
+        self.slopes_true = slopes_true
+
+        self.groups_ests = groups_ests
+        self.groups_true = groups_true
+
+    def RMSE(self):
+        self.RMSE = 0
+        for m in range(self.M):
+            for i in range(self.N):
+                  difference = self.slopes_ests[m,:,self.groups_ests[m,i]] - self.slopes_true.values[:,self.groups_true[i]]
+                  self.RMSE += difference @ difference.T
+        self.RMSE = np.sqrt(self.RMSE / (self.N*self.K*self.M))
+        return self.RMSE
+
+    def confusion_mat_groups(self):
+        conf_mat = np.zeros((self.G, self.G_MAX),dtype=int)
+
+        for m in range(self.M):
+            for i in range(self.N):
+                true_group = self.groups_true[i]
+                est_group = self.groups_ests[m,i]
+                conf_mat[true_group, est_group] += 1
+
+        col = ['g_hat=%d'%i for i in range(self.G_MAX)]
+        row = ['g=%d'%i for i in range(self.G)]
+        self.conf_mat = pd.DataFrame(conf_mat, columns=col, index=row)
+
+    def conf_interval(self, alpha):
+        estimates = np.sort(self.slopes_ests,axis=0).reshape(self.M, self.K*self.G)
+
+        mean = np.mean(estimates, axis=0)
+        stdev = np.std(estimates, axis=0)
+        lower_ci = estimates[int(alpha/2 * self.M),:]
+        upper_ci = estimates[int((1-alpha/2) * self.M),:]
+
+        row = ["k=%d g=%d"%(k,g) for k in range(self.K) for g in range(self.G)]
+        col = ["Lower CI", "Upper CI", "Mean", "St. dev."]
+        self.summary = pd.DataFrame(np.vstack((lower_ci,upper_ci,mean,stdev)).T, columns=col, index=row)
+
 
 def main():
-    from estimate import plot_residuals, plot_fitted_values
+    from estimate import plot_residuals, plot_fitted_values, plot_clusters
 
     np.random.seed(0)
-    N = 500
-    T = 10
-    K = 2
+    N = 100
+    T = 50
+    G = 10
+    K = 1
+    M = 100
+    filename = "estimates_gfe_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
+    #TODO: folder gfe/estimates
+
+    train = 1
+    if not train:
+        load_results(filename)
+        sys.exit(0)
+
+
+    # B = np.array([[0.3, 0.9]])
+    # B = np.array([[0.3, 0.5, 0.8]])
+    # B = np.array([[0.1, 2/3], [0.3, 0.6]])
+    # B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
+    B = np.array([[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]])
+
+    # B = np.array([[0.55, 0.65]])
+    # B = np.array([[0.4, 0.5, 0.8]])
+    # B = np.array([[0.3, 0.4], [0.4, 0.5]])
+    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
+    col = ['g=%d'%i for i in range(G)]
+    row = ['k=%d'%i for i in range(K)]
+    slopes_df = pd.DataFrame(B, columns=col, index=row)
 
 
     TrackTime("Simulate")
-    dataset = Dataset(N, T, K, G=4)
-    dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
+    dataset = Dataset(N, T, K, G=G)
+    dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk, slopes_df)
+    model = GFE(Slopes.heterog)
+
+    G_MAX = G
+    slopes_ests = np.zeros((M, K, G_MAX))
+    groups_ests = np.zeros((M,N), dtype=int)
+    bar_length = 30
+    for m in range(M):
+        if (m) % 1 == 0:
+            percent = 100.0*m/(M-1)
+            sys.stdout.write("\rExperiment progress: [{:{}}] {:>3}%".format('='*int(percent/(100.0/bar_length)),bar_length, int(percent)))
+            sys.stdout.flush()
+
+        TrackTime("Re-simulate")
+        dataset.re_simulate()
+
+        x = dataset.data.drop(["y"], axis=1)
+        y = dataset.data["y"]
+
+        TrackTime("Estimate")
+        model.estimate_G(dataset.G)    #assume true value of G is known
+        if M == 1:
+            model.fit(x,y,verbose=True)
+            print("\nTook %d iterations"%model.nr_iterations)
+            model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
+            print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
+        else:
+            model.fit(x,y,verbose=False)
+
+        TrackTime("Save results")
+        slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_MAX-model.G))))
+        groups_ests[m,:] = model.groups_per_indiv
 
 
-    TrackTime("Estimate")
-    x = dataset.data.drop(["y"], axis=1)
-    y = dataset.data["y"]
+    TrackTime("Results")
+    result = Result(dataset.slopes_df, slopes_ests, dataset.groups_per_indiv, groups_ests)
 
-    gfe = GFE(Slopes.heterog)
-    gfe.estimate_G(dataset.G)       #assume true value of G is known
-    gfe.fit(x, y)
-    gfe.predict()
+    with open(filename, 'wb') as output:
+        pickle.dump(result, output, pickle.HIGHEST_PROTOCOL)
 
-
-    TrackTime("Plot")
-    plot_residuals(gfe.fitted_values, gfe.resids, "GFE")
-    plot_fitted_values(x['feature0'], y, gfe.fitted_values, "GFE")
-
-
-    TrackTime("Print")
-
-    print("TOOK %s ITERATIONS\n"%gfe.nr_iterations)
-
-    print("TRUE COEFFICIENTS:")
-    print(dataset.slopes_df)
-    # print(dataset.effects_df)
-    # print(dataset.groups_per_indiv)
-    # for group in dataset.indivs_per_group:
-    #     print(group)
-
-    print("\n\nESTIMATED COEFFICIENTS:")
-    print(gfe.beta_hat)
-    # print(gfe.alpha_hat)
-    # print(gfe.groups_per_indiv)
-    # for group in gfe.indivs_per_group:
-    #     print(group)
-
-    gfe.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group)
-
-
-    if gfe.slopes == Slopes.homog:
-        TrackTime("Standard libraries")
-
-        # from linearmodels import PooledOLS
-        # mod = PooledOLS(y, x) 
-        # pooledOLS_res = mod.fit(cov_type='clustered', cluster_entity=True)
-        # print("\nPOOLED OLS ESTIMATION:"), print(pooledOLS_res.params)
-
-        from linearmodels import RandomEffects
-        model_re = RandomEffects(y, x)
-        re_res = model_re.fit()
-        print("\nRANDOM EFFECTS ESTIMATION:"), print(re_res.params)
-
-        from linearmodels import PanelOLS
-        model_fe = PanelOLS(y, x, entity_effects = True)
-        fe_res = model_fe.fit()
-        print("\nFIXED EFFECTS ESTIMATION:"), print(fe_res.params)
-
+    load_results(filename)
 
     print("\n")
     TrackReport()
+
+
+
+def load_results(filename):
+    if os.path.isfile(filename):
+        with open(filename, 'rb') as output:
+            result = pickle.load(output)
+
+    print("\n\nTRUE COEFFICIENTS:")
+    print(result.slopes_true)
+
+    result.RMSE()
+    print("\nRMSE: %.4f\n" %(result.RMSE*100))
+
+    result.confusion_mat_groups()
+    print(result.conf_mat, "\n")
+
+    result.conf_interval(0.05)
+    print(result.summary)
+
+
 
 if __name__ == "__main__":
     main()
