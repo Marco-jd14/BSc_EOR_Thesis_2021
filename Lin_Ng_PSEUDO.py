@@ -189,7 +189,7 @@ class PSEUDO:
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
         if isinstance(Y, pd.DataFrame):
             Y = Y.iloc[:,0]
-        #demean data:
+
         self.x_bar = X.groupby('n').mean()
         self.y_bar = Y.groupby('n').mean()
         self.X = X - self.x_bar
@@ -217,6 +217,7 @@ class PSEUDO:
 
 
     def group_similarity(self, true_groups_per_indiv, true_indivs_per_group, verbose=True):
+        # This method only makes sense if G_true == G_hat
         correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
         print("%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
 
@@ -258,24 +259,28 @@ def main():
     G = 3
     K = 2
     M = 100
-    filename = "estimates_pseudo_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
-
+    filename = "pseudo/pseudo_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
     if not train:
         load_results(filename)
         sys.exit(0)
+    else:
+        if os.path.isfile(filename):
+            print(r"THIS FILE ALREADY EXISTS, ARE YOU SURE YOU WANT TO OVERWRITE? Y\N")
+            if not input().upper() == "Y":
+                sys.exit(0)
 
 
     # B = np.array([[0.3, 0.9]])
     # B = np.array([[0.3, 0.5, 0.8]])
     # B = np.array([[0.1, 2/3], [0.3, 0.6]])
-    B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
+    # B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
 
     # B = np.array([[0.55, 0.65]])
     # B = np.array([[0.4, 0.5, 0.8]])
     # B = np.array([[0.3, 0.4], [0.4, 0.5]])
-    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
+    B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
     col = ['g=%d'%i for i in range(G)]
     row = ['k=%d'%i for i in range(K)]
     slopes_df = pd.DataFrame(B, columns=col, index=row)
@@ -304,13 +309,12 @@ def main():
 
         TrackTime("Estimate")
         model.estimate_G(dataset.G)    #assume true value of G is known
+        model.fit(x,y)
         if M == 1:
-            model.fit(x,y,verbose=True)
             print("\nTook %d iterations"%model.nr_iterations)
             model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
             print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
-        else:
-            model.fit(x,y,verbose=False)
+
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_MAX-model.G))))

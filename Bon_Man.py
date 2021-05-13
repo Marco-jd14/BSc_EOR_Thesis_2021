@@ -42,7 +42,7 @@ class GFE:
         self.groups_per_indiv = np.zeros(self.N, dtype=int)
 
 
-    def _group_assignment(self, verbose):
+    def _group_assignment(self, verbose, s):
         for i in range(self.N):
             best_g_val = np.Inf
             if self.slopes == Slopes.homog:
@@ -67,7 +67,7 @@ class GFE:
             group_size = np.count_nonzero(self.groups_per_indiv == g) #len(self.indivs_per_group[g])
             if group_size < 5:
                 if verbose:
-                    print("%s: Small group:"%self.s, g)
+                    print("%s: Small group:"%s, g)
 
                 # Choose 1 member from each group with > 5 members for the small group
                 # Fill group to 5 members from biggest group
@@ -161,9 +161,9 @@ class GFE:
         # prev_beta_hat = np.zeros_like(self.beta_hat)
         prev_groups_per_indiv = np.zeros_like(self.groups_per_indiv)
 
-        for self.s in range(100):
+        for s in range(100):
             # TrackTime("Fit a group")
-            self._group_assignment(verbose)
+            self._group_assignment(verbose, s)
 
             # TrackTime("Make dummy labels")
             X = self._prepare_dummy_dataset()
@@ -181,7 +181,7 @@ class GFE:
             # prev_beta_hat = copy(self.beta_hat)
             prev_groups_per_indiv = copy(self.groups_per_indiv)
 
-        self.nr_iterations = self.s+1
+        self.nr_iterations = s+1
 
         if self.slopes == Slopes.heterog:
             self._sort_groups(verbose)
@@ -190,6 +190,7 @@ class GFE:
 
 
     def group_similarity(self, true_groups_per_indiv, true_indivs_per_group, verbose=True):
+        # This method only makes sense if G_true == G_hat
         correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
         print("%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
 
@@ -273,28 +274,30 @@ def main():
     np.random.seed(0)
     N = 100
     T = 50
-    G = 10
-    K = 1
+    G = 3
+    K = 2
     M = 100
-    filename = "estimates_gfe_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
-    #TODO: folder gfe/estimates
+    filename = "gfe/gfe_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
     if not train:
         load_results(filename)
         sys.exit(0)
-
+    else:
+        if os.path.isfile(filename):
+            print(r"THIS FILE ALREADY EXISTS, ARE YOU SURE YOU WANT TO OVERWRITE? Y\N")
+            if not input().upper() == "Y":
+                sys.exit(0)
 
     # B = np.array([[0.3, 0.9]])
     # B = np.array([[0.3, 0.5, 0.8]])
     # B = np.array([[0.1, 2/3], [0.3, 0.6]])
     # B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
-    B = np.array([[0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]])
 
     # B = np.array([[0.55, 0.65]])
     # B = np.array([[0.4, 0.5, 0.8]])
     # B = np.array([[0.3, 0.4], [0.4, 0.5]])
-    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
+    B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
     col = ['g=%d'%i for i in range(G)]
     row = ['k=%d'%i for i in range(K)]
     slopes_df = pd.DataFrame(B, columns=col, index=row)
