@@ -390,9 +390,10 @@ def main():
         # model.set_G(dataset.G)
         # model.fit(x,y,verbose=False)
 
+        # ESTIMATE EVERYTHING
         best_groups = model.estimate_G(G_max, x, y)
         model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
-        print("G_hat =",model.G_hat)
+        print("G_hat =",model.G_hat) if model.G_hat != dataset.G else None
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))

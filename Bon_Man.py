@@ -313,25 +313,18 @@ class Result:
     def conf_interval(self, alpha):
         estimates = np.sort(self.slopes_ests,axis=0).reshape(self.M, self.K*self.G_MAX)
 
-        if self.G_MAX > self.G:
-            mean = np.zeros(self.K*self.G_MAX)
-            stdev = np.zeros(self.K*self.G_MAX)
-            lower_ci = np.zeros(self.K*self.G_MAX)
-            upper_ci = np.zeros(self.K*self.G_MAX)
+        mean = np.zeros(self.K*self.G_MAX)
+        stdev = np.zeros(self.K*self.G_MAX)
+        lower_ci = np.zeros(self.K*self.G_MAX)
+        upper_ci = np.zeros(self.K*self.G_MAX)
 
-            for k in range(self.K):
-                for g in range(self.G_MAX):
-                    rel_ests = estimates[np.nonzero(estimates[:,k*self.G_MAX+g]),k*self.G_MAX+g]
-                    mean[k*self.G_MAX+g] = np.mean(rel_ests)
-                    stdev[k*self.G_MAX+g] = np.std(rel_ests)
-                    lower_ci[k*self.G_MAX+g] = rel_ests[0,int(alpha/2 * len(rel_ests[0]))]
-                    upper_ci[k*self.G_MAX+g] = rel_ests[0,int((1-alpha/2) * len(rel_ests[0]))]
-
-        else:
-            mean = np.mean(estimates, axis=0)
-            stdev = np.std(estimates, axis=0)
-            lower_ci = estimates[int(alpha/2 * self.M),:]
-            upper_ci = estimates[int((1-alpha/2) * self.M),:]
+        for k in range(self.K):
+            for g in range(self.G_MAX):
+                rel_ests = estimates[np.nonzero(estimates[:,k*self.G_MAX+g]),k*self.G_MAX+g]
+                mean[k*self.G_MAX+g] = np.mean(rel_ests)
+                stdev[k*self.G_MAX+g] = np.std(rel_ests)
+                lower_ci[k*self.G_MAX+g] = rel_ests[0,int(alpha/2 * len(rel_ests[0]))]
+                upper_ci[k*self.G_MAX+g] = rel_ests[0,int((1-alpha/2) * len(rel_ests[0]))]
 
         row = ["k=%d g=%d"%(k,g) for k in range(self.K) for g in range(self.G_MAX)]
         col = ["Lower CI", "Upper CI", "Mean", "St. dev."]
@@ -346,13 +339,13 @@ def main():
     np.random.seed(0)
     N = 100
     T = 10
-    G = 2
-    K = 1
-    M = 10
+    G = 3
+    K = 2
+    M = 100
     filename = "gfe/gfe_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
-    if not train:
+    if not train and os.path.isfile(filename):
         load_results(filename)
         sys.exit(0)
     else:
@@ -361,7 +354,7 @@ def main():
             if not input().upper() == "Y":
                 sys.exit(0)
 
-    B = np.array([[0.3, 0.9]])
+    # B = np.array([[0.3, 0.9]])
     # B = np.array([[0.3, 0.5, 0.8]])
     # B = np.array([[0.1, 2/3], [0.3, 0.6]])
     # B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
@@ -369,7 +362,7 @@ def main():
     # B = np.array([[0.55, 0.65]])
     # B = np.array([[0.4, 0.5, 0.8]])
     # B = np.array([[0.3, 0.4], [0.4, 0.5]])
-    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
+    B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
     col = ['g=%d'%i for i in range(G)]
     row = ['k=%d'%i for i in range(K)]
     slopes_df = pd.DataFrame(B, columns=col, index=row)
@@ -381,7 +374,7 @@ def main():
     # dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
     model = GFE(Slopes.heterog)
 
-    G_max = 7#int(N/12)
+    G_max = G+3
     slopes_ests = np.zeros((M, K, G_max))
     groups_ests = np.zeros((M,N), dtype=int)
     bar_length = 30
@@ -399,15 +392,16 @@ def main():
 
         TrackTime("Estimate")
         # ASSUME TRUE GROUP MEMBERSHIP IS KNOWN
-        # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
+        model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
 
         # ASSUME TRUE VALUE OF G IS KNOWN
         # model.set_G(dataset.G)
         # model.fit(x,y,verbose=False)
 
-        best_groups = model.estimate_G(G_max, x, y)
-        model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
-        print("G_hat =",model.G_hat)
+        # ESTIMATE EVERYTHING
+        # best_groups = model.estimate_G(G_max, x, y)
+        # model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
+        # print(" G_hat =",model.G_hat) if model.G_hat != dataset.G else None
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
