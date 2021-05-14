@@ -171,15 +171,16 @@ class Dataset:
 
         Y += effects_m
 
-        # if self.var == Variance.heterosk:
-        #     heterosk = (X[:,:,0]/np.mean(X[:,:,0])) #/np.sqrt(K)
-        #     corr = heterosk
-        # elif self.var == Variance.homosk:
-        #     homosk = np.ones((self.N, self.T))*3
-        #     corr = homosk
+        if self.var == Variance.heterosk:
+            heterosk = X[:,:,0]-np.min(X[:,:,0])
+            self.corr = heterosk/np.mean(heterosk) * 1.5
+        elif self.var == Variance.homosk:
+            homosk = np.ones((self.N, self.T))
+            self.corr = homosk
 
         # errors = np.random.normal(0, np.sqrt(np.mean(Y))*corr)
-        errors = np.random.normal(0, 1, size=(self.N, self.T))
+        # errors = np.random.normal(0, 1, size=(self.N, self.T))
+        errors = np.random.normal(0, self.corr)
         Y += errors
 
         index = pd.MultiIndex.from_product([np.arange(self.N), np.arange(self.T)], names=["n", "t"])
@@ -202,7 +203,8 @@ class Dataset:
 
         Y += self.effects_m
 
-        errors = np.random.normal(0, 1, size=(self.N, self.T))
+        # errors = np.random.normal(0, 1, size=(self.N, self.T))
+        errors = np.random.normal(0, self.corr)
         Y += errors
 
         index = pd.MultiIndex.from_product([np.arange(self.N), np.arange(self.T)], names=["n", "t"])
