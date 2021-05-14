@@ -10,6 +10,7 @@ import numpy as np
 import os.path
 import sys
 import pickle
+from copy import copy
 from scipy.linalg import lstsq
 
 from simulate import Effects, Slopes, Variance, Dataset
@@ -210,6 +211,44 @@ class PSEUDO:
         self.BIC = pd.DataFrame(BIC_G.reshape(1,-1), columns=col, index=["BIC"])
 
 
+    def fit_given_groups(self, X, Y, groups_per_indiv, first_fit=True, verbose=True):
+        self.G = np.max(groups_per_indiv)+1
+        if first_fit:
+            if isinstance(Y, pd.DataFrame):
+                Y = Y.iloc[:,0]
+
+            self.x_bar = X.groupby('n').mean()
+            self.y_bar = Y.groupby('n').mean()
+            self.X = X - self.x_bar
+            self.Y = Y - self.y_bar
+
+            self.N = len(set(self.X.index.get_level_values(0)))
+            self.T = len(set(self.X.index.get_level_values(1)))
+            self.K = len(self.X.columns)
+            self.min_group_size = 10
+
+        self.groups_per_indiv = copy(groups_per_indiv)
+        self.alpha_hat = np.zeros(self.N)
+        betas = np.zeros((self.K, self.G))
+
+        for g in range(self.G):
+            selection = np.where(self.groups_per_indiv == g)[0]
+            selection_indices = np.zeros(len(selection)*self.T, dtype=int)
+            for i in range(len(selection)):
+                selection_indices[i*self.T:(i+1)*self.T] = np.arange(self.T) + selection[i]*self.T
+
+            x_sel = self.X.values[selection_indices,:]
+            y_sel = self.Y.values[selection_indices]
+
+            betas[:,g], _, _, _ = lstsq(x_sel, y_sel)
+
+            # Estimate individual fixed effects
+            self.alpha_hat[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ betas[:,g]
+
+        self._make_dataframes(betas)
+
+
+
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame, verbose=True):
         if isinstance(Y, pd.DataFrame):
             Y = Y.iloc[:,0]
@@ -293,7 +332,7 @@ def main():
     M = 100
     filename = "pseudo/pseudo_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
-    train = 0
+    train = 1
     if not train:
         load_results(filename)
         sys.exit(0)
@@ -343,16 +382,18 @@ def main():
 
         TrackTime("Estimate")
         # model.set_G(dataset.G)    #assume true value of G is known
-        model.estimate_G(G_max, x, y)
-        print("G_hat =",model.G_hat)
-        model.set_G(model.G_hat)
+        # model.estimate_G(G_max, x, y)
+        # print("G_hat =",model.G_hat)
+        # model.set_G(model.G_hat)
         if M == 1:
+            # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=True)
             model.fit(x,y,verbose=True)
             print("\nTook %d iterations"%model.nr_iterations)
             model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
             print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
         else:
-            model.fit(x,y,verbose=False)
+            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
+            # model.fit(x,y,verbose=False)
 
 
         TrackTime("Save results")

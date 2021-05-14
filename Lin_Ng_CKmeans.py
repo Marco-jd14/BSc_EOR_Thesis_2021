@@ -135,6 +135,29 @@ class CK_means:
         self.BIC = pd.DataFrame(BIC_G.reshape(1,-1), columns=col, index=["BIC"])
 
 
+    def fit_given_groups(self, X, Y, groups_per_indiv, first_fit=True, verbose=True):
+        self.G = np.max(groups_per_indiv)+1
+        if first_fit:
+            if isinstance(Y, pd.DataFrame):
+                Y = Y.iloc[:,0]
+
+            self.x_bar = X.groupby('n').mean()
+            self.y_bar = Y.groupby('n').mean()
+            self.X = X - self.x_bar
+            self.Y = Y - self.y_bar
+
+            self.N = len(set(self.X.index.get_level_values(0)))
+            self.T = len(set(self.X.index.get_level_values(1)))
+            self.K = len(self.X.columns)
+
+        self.groups_per_indiv = copy(groups_per_indiv)
+        self.beta_hat = np.zeros((self.K, self.G))
+        self._calc_beta_hat(self.groups_per_indiv)
+        self._sort_groups(self.beta_hat)
+        self._estimate_fixed_effects()
+        self._make_dataframes()
+
+
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame, verbose=True):
         if isinstance(Y, pd.DataFrame):
             Y = Y.iloc[:,0]
@@ -215,7 +238,7 @@ def main():
     T = 50
     G = 3
     K = 2
-    M = 10
+    M = 1000
     filename = "ckmeans/ckmeans_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
@@ -266,16 +289,18 @@ def main():
 
         TrackTime("Estimate")
         # model.set_G(dataset.G)    #assume true value of G is known
-        model.estimate_G(G_max, x, y)
-        print("G_hat =",model.G_hat)
-        model.set_G(model.G_hat)
+        # model.estimate_G(G_max, x, y)
+        # print("G_hat =",model.G_hat)
+        # model.set_G(model.G_hat)
         if M == 1:
+            # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=True)
             model.fit(x,y,verbose=True)
             print("\nTook %d iterations"%model.nr_iterations)
             model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
             print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
         else:
-            model.fit(x,y,verbose=False)
+            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
+            # model.fit(x,y,verbose=False)
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))

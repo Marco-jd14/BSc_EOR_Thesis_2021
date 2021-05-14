@@ -175,6 +175,28 @@ class GFE:
         self.BIC = pd.DataFrame(BIC_G.reshape(1,-1), columns=col, index=["BIC"])
 
 
+    def fit_given_groups(self, X, Y, groups_per_indiv, first_fit=True, verbose=True):
+        self.G = np.max(groups_per_indiv)+1
+        if first_fit:
+            self.N = len(set(X.index.get_level_values(0)))
+            self.T = len(set(X.index.get_level_values(1)))
+            self.K = len(X.columns)
+            self.X = copy(X)
+            self.Y = Y.values.reshape(self.N*self.T,1)
+
+            self.groups_per_indiv = copy(groups_per_indiv)
+            self.alpha_hat = np.zeros((self.G,self.T))
+
+        X = self._prepare_dummy_dataset()
+        p, _, _, _ = lstsq(X, self.Y)
+        self._update_values(p, X.columns)
+
+        if self.slopes == Slopes.heterog:
+            self._sort_groups(verbose)
+
+        self._make_dataframes()
+
+
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame, verbose=True):
         self.N = len(set(X.index.get_level_values(0)))
         self.T = len(set(X.index.get_level_values(1)))
@@ -319,7 +341,7 @@ def main():
     T = 10
     G = 2
     K = 1
-    M = 20
+    M = 100
     filename = "gfe/gfe_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
@@ -348,7 +370,7 @@ def main():
 
     TrackTime("Simulate")
     dataset = Dataset(N, T, K, G=G)
-    dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk, slopes_df)
+    dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk, slopes_df=slopes_df)
     # dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
     model = GFE(Slopes.heterog)
 
@@ -369,18 +391,20 @@ def main():
         y = dataset.data["y"]
 
         TrackTime("Estimate")
-        # model.estimate_G(dataset.G)    #assume true value of G is known
-        model.estimate_G(G_max, x, y)
-        print("G_hat =",model.G_hat)
-        print(model.BIC)
-        model.set_G(model.G_hat)
+        # model.set_G(dataset.G)    #assume true value of G is known
+        # model.estimate_G(G_max, x, y)
+        # print("G_hat =",model.G_hat)
+        # print(model.BIC)
+        # model.set_G(model.G_hat)
         if M == 1:
-            model.fit(x,y,verbose=True)
-            print("\nTook %d iterations"%model.nr_iterations)
+            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=True)
+            # model.fit(x,y,verbose=True)
+            # print("\nTook %d iterations"%model.nr_iterations)
             model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
             print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
         else:
-            model.fit(x,y,verbose=False)
+            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
+            # model.fit(x,y,verbose=False)
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
