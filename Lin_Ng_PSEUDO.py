@@ -193,7 +193,9 @@ class PSEUDO:
         self.G = G
 
     def estimate_G(self, G_max, X, Y):
+        self.N = len(set(X.index.get_level_values(0)))
         BIC_G = np.zeros(G_max)
+        best_bic = np.Inf
         for g in range(G_max):
             self.set_G(g+1)
             try:
@@ -202,6 +204,9 @@ class PSEUDO:
                 SSR = self.resids.values @ self.resids.values.T
                 NT = self.N*self.T
                 BIC_G[g]  = np.log(SSR/NT) + g*self.K * np.sqrt(min(self.N, self.T)) * np.log(NT) / NT + (g-1) * np.log(self.N**2)/self.N**2
+                if BIC_G[g] < best_bic:
+                    best_bic = BIC_G[g]
+                    groups = copy(self.groups_per_indiv)
             except:
                 BIC_G[g] = np.Inf
 
@@ -209,6 +214,8 @@ class PSEUDO:
         col = ['G=%d'%(g+1) for g in range(G_max)]
         col[self.G_hat-1] = 'G_hat=%d'%self.G_hat
         self.BIC = pd.DataFrame(BIC_G.reshape(1,-1), columns=col, index=["BIC"])
+
+        return groups
 
 
     def fit_given_groups(self, X, Y, groups_per_indiv, first_fit=True, verbose=True):
@@ -225,7 +232,6 @@ class PSEUDO:
             self.N = len(set(self.X.index.get_level_values(0)))
             self.T = len(set(self.X.index.get_level_values(1)))
             self.K = len(self.X.columns)
-            self.min_group_size = 10
 
         self.groups_per_indiv = copy(groups_per_indiv)
         self.alpha_hat = np.zeros(self.N)
@@ -241,8 +247,6 @@ class PSEUDO:
             y_sel = self.Y.values[selection_indices]
 
             betas[:,g], _, _, _ = lstsq(x_sel, y_sel)
-
-            # Estimate individual fixed effects
             self.alpha_hat[selection] = self.y_bar.values[selection] - self.x_bar.values[selection,:] @ betas[:,g]
 
         self._make_dataframes(betas)
@@ -311,10 +315,8 @@ class PSEUDO:
 
             fixed_effects = np.kron(self.alpha_hat.values[selection].reshape(len(selection)),np.ones(self.T))
             self.fitted_values[selection_indices] = X.values[selection_indices,:] @ self.beta_hat.values[:,g] + fixed_effects
-            fitted_values2[selection_indices] = self.X.values[selection_indices,:] @ self.beta_hat.values[:,g]
 
         self.resids = self.Y + self.y_bar - self.fitted_values
-        self.resids2 = self.Y - fitted_values2
         index = pd.MultiIndex.from_product([np.arange(self.N), np.arange(self.T)], names=["n", "t"])
         self.fitted_values = pd.DataFrame(self.fitted_values, index=index)
 
@@ -324,23 +326,23 @@ def main():
     from estimate import plot_residuals, plot_fitted_values, plot_clusters
     from Bon_Man import Result
 
-    # np.random.seed(0)
+    np.random.seed(0)
     N = 100
     T = 50
     G = 5
     K = 2
-    M = 100
+    M = 10
     filename = "pseudo/pseudo_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
     if not train:
         load_results(filename)
         sys.exit(0)
-    # else:
-    #     if os.path.isfile(filename):
-    #         print(r"THIS FILE ALREADY EXISTS, ARE YOU SURE YOU WANT TO OVERWRITE? Y\N")
-    #         if not input().upper() == "Y":
-    #             sys.exit(0)
+    else:
+        if os.path.isfile(filename):
+            print(r"THIS FILE ALREADY EXISTS, ARE YOU SURE YOU WANT TO OVERWRITE? Y\N")
+            if not input().upper() == "Y":
+                sys.exit(0)
 
 
     # B = np.array([[0.3, 0.9]])
@@ -381,20 +383,16 @@ def main():
         y = dataset.data["y"]
 
         TrackTime("Estimate")
-        # model.set_G(dataset.G)    #assume true value of G is known
-        # model.estimate_G(G_max, x, y)
-        # print("G_hat =",model.G_hat)
-        # model.set_G(model.G_hat)
-        if M == 1:
-            # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=True)
-            model.fit(x,y,verbose=True)
-            print("\nTook %d iterations"%model.nr_iterations)
-            model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
-            print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
-        else:
-            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
-            # model.fit(x,y,verbose=False)
+        # ASSUME TRUE GROUP MEMBERSHIP IS KNOWN
+        # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
 
+        # ASSUME TRUE VALUE OF G IS KNOWN
+        # model.set_G(dataset.G)
+        # model.fit(x,y,verbose=False)
+
+        best_groups = model.estimate_G(G_max, x, y)
+        model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
+        print("G_hat =",model.G_hat)
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))

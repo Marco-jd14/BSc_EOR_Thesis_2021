@@ -118,6 +118,7 @@ class CK_means:
 
     def estimate_G(self, G_max, X, Y):
         BIC_G = np.zeros(G_max)
+        best_bic = np.Inf
         for g in range(G_max):
             self.set_G(g+1)
             try:
@@ -126,6 +127,9 @@ class CK_means:
                 SSR = self.resids.values @ self.resids.values.T
                 NT = self.N*self.T
                 BIC_G[g]  = np.log(SSR/NT) + g*self.K * np.sqrt(min(self.N, self.T)) * np.log(NT) / NT + (g-1) * np.log(self.N**2)/self.N**2
+                if BIC_G[g] < best_bic:
+                    best_bic = BIC_G[g]
+                    groups = copy(self.groups_per_indiv)
             except:
                 BIC_G[g] = np.Inf
 
@@ -133,6 +137,8 @@ class CK_means:
         col = ['G=%d'%(g+1) for g in range(G_max)]
         col[self.G_hat-1] = 'G_hat=%d'%self.G_hat
         self.BIC = pd.DataFrame(BIC_G.reshape(1,-1), columns=col, index=["BIC"])
+
+        return groups
 
 
     def fit_given_groups(self, X, Y, groups_per_indiv, first_fit=True, verbose=True):
@@ -236,9 +242,9 @@ def main():
     np.random.seed(0)
     N = 100
     T = 50
-    G = 3
-    K = 2
-    M = 1000
+    G = 2
+    K = 1
+    M = 10
     filename = "ckmeans/ckmeans_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
@@ -252,7 +258,7 @@ def main():
                 sys.exit(0)
 
 
-    # B = np.array([[0.3, 0.9]])
+    B = np.array([[0.3, 0.9]])
     # B = np.array([[0.3, 0.5, 0.8]])
     # B = np.array([[0.1, 2/3], [0.3, 0.6]])
     # B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
@@ -260,7 +266,7 @@ def main():
     # B = np.array([[0.55, 0.65]])
     # B = np.array([[0.4, 0.5, 0.8]])
     # B = np.array([[0.3, 0.4], [0.4, 0.5]])
-    B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
+    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
     col = ['g=%d'%i for i in range(G)]
     row = ['k=%d'%i for i in range(K)]
     slopes_df = pd.DataFrame(B, columns=col, index=row)
@@ -288,19 +294,16 @@ def main():
         y = dataset.data["y"]
 
         TrackTime("Estimate")
-        # model.set_G(dataset.G)    #assume true value of G is known
-        # model.estimate_G(G_max, x, y)
-        # print("G_hat =",model.G_hat)
-        # model.set_G(model.G_hat)
-        if M == 1:
-            # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=True)
-            model.fit(x,y,verbose=True)
-            print("\nTook %d iterations"%model.nr_iterations)
-            model.group_similarity(dataset.groups_per_indiv, dataset.indivs_per_group, verbose=True)
-            print("\nESTIMATED COEFFICIENTS:\n",model.beta_hat)
-        else:
-            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
-            # model.fit(x,y,verbose=False)
+        # ASSUME TRUE GROUP MEMBERSHIP IS KNOWN
+        # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
+
+        # ASSUME TRUE VALUE OF G IS KNOWN
+        # model.set_G(dataset.G)
+        # model.fit(x,y,verbose=False)
+
+        best_groups = model.estimate_G(G_max, x, y)
+        model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
+        print("G_hat =",model.G_hat)
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
