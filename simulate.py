@@ -24,6 +24,10 @@ class Variance(enum.Enum):
     homosk = 0
     heterosk = 1
 
+class Fit(enum.Enum):
+    groups_known = 0
+    G_known = 1
+    complete = 2
 
 class Dataset:
     def __init__(self, N: int, T: int, K: int, G: int=1):

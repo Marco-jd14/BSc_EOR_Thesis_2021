@@ -13,7 +13,7 @@ import pickle
 from copy import copy
 from scipy.linalg import lstsq
 
-from simulate import Effects, Slopes, Variance, Dataset
+from simulate import Effects, Slopes, Variance, Dataset, Fit
 from lib.tracktime import TrackTime, TrackReport
 
 
@@ -332,7 +332,12 @@ def main():
     G = 5
     K = 2
     M = 10
-    filename = "pseudo/pseudo_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
+    # fit = Fit.groups_known
+    fit = Fit.G_known
+    # fit = Fit.complete
+    var = Variance.homosk
+    # var = Variance.heterosk
+    filename = "gfe/gfe_N=%d_T=%d_G=%d_K=%d_M=%d_fit=%d_e=%d" %(N,T,G,K,M,fit.value,var.value)
 
     train = 1
     if not train:
@@ -383,17 +388,20 @@ def main():
         y = dataset.data["y"]
 
         TrackTime("Estimate")
-        # ASSUME TRUE GROUP MEMBERSHIP IS KNOWN
-        # model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
+        if fit == Fit.groups_known:
+            # ASSUME TRUE GROUP MEMBERSHIP IS KNOWN
+            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
 
-        # ASSUME TRUE VALUE OF G IS KNOWN
-        # model.set_G(dataset.G)
-        # model.fit(x,y,verbose=False)
+        elif fit == Fit.G_known:
+            # ASSUME TRUE VALUE OF G IS KNOWN
+            model.set_G(dataset.G)
+            model.fit(x,y,verbose=False)
 
-        # ESTIMATE EVERYTHING
-        best_groups = model.estimate_G(G_max, x, y)
-        model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
-        print("G_hat =",model.G_hat) if model.G_hat != dataset.G else None
+        elif fit == Fit.complete:
+            # ESTIMATE EVERYTHING
+            best_groups = model.estimate_G(G_max, x, y)
+            model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
+            print(" G_hat =",model.G_hat) if model.G_hat != dataset.G else None
 
         TrackTime("Save results")
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
