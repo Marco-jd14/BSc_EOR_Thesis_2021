@@ -146,8 +146,34 @@ class GFE:
         self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
 
 
-    def estimate_G(self, G):
+    def set_G(self, G):
         self.G = G
+
+    def estimate_G(self, G_max, X, Y):
+        BIC_G = np.zeros(G_max)
+
+        self.set_G(G_max)
+        self.fit(X, Y, verbose=False)
+        self.predict()
+        SSR = self.resids.values.T @ self.resids.values
+        theta_hat_sq = SSR / (self.N*self.T - G_max*self.T - self.N - self.K)
+        BIC_G[G_max-1] = SSR/(self.N*self.T) + theta_hat_sq * (self.G*self.T+self.N+self.K) * np.log(self.N*self.T) / (self.N*self.T)
+
+        for g in range(G_max-1):
+            self.set_G(g+1)
+            # try:
+            self.fit(X, Y, verbose=False)
+            self.predict()
+            SSR = self.resids.values.T @ self.resids.values
+            BIC_G[g]  = SSR/(self.N*self.T) + theta_hat_sq * (self.G*self.T+self.N+self.K) * np.log(self.N*self.T) / (self.N*self.T)
+            # except:
+            #     BIC_G[g] = np.Inf
+
+        self.G_hat = np.argmin(BIC_G)+1
+        col = ['G=%d'%(g+1) for g in range(G_max)]
+        col[self.G_hat-1] = 'G_hat=%d'%self.G_hat
+        self.BIC = pd.DataFrame(BIC_G.reshape(1,-1), columns=col, index=["BIC"])
+
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame, verbose=True):
         self.N = len(set(X.index.get_level_values(0)))
@@ -161,7 +187,7 @@ class GFE:
         # prev_beta_hat = np.zeros_like(self.beta_hat)
         prev_groups_per_indiv = np.zeros_like(self.groups_per_indiv)
 
-        for s in range(100):
+        for s in range(25):
             # TrackTime("Fit a group")
             self._group_assignment(verbose, s)
 
@@ -214,7 +240,7 @@ class GFE:
             fixed_effects = np.kron(np.ones(len(selection)), self.alpha_hat.values[g,:])
             self.fitted_values[selection_indices,0] = self.X.values[selection_indices,:] @ self.beta_hat.values[:,g] + fixed_effects
 
-        self.resids = self.Y - self.fitted_values
+        self.resids = pd.DataFrame(self.Y - self.fitted_values, index=self.X.index)
         index = pd.MultiIndex.from_product([np.arange(self.N), np.arange(self.T)], names=["n", "t"])
         self.fitted_values = pd.DataFrame(self.fitted_values, index=index)
 
@@ -256,14 +282,29 @@ class Result:
         self.conf_mat = pd.DataFrame(conf_mat, columns=col, index=row)
 
     def conf_interval(self, alpha):
-        estimates = np.sort(self.slopes_ests,axis=0).reshape(self.M, self.K*self.G)
+        estimates = np.sort(self.slopes_ests,axis=0).reshape(self.M, self.K*self.G_MAX)
 
-        mean = np.mean(estimates, axis=0)
-        stdev = np.std(estimates, axis=0)
-        lower_ci = estimates[int(alpha/2 * self.M),:]
-        upper_ci = estimates[int((1-alpha/2) * self.M),:]
+        if self.G_MAX > self.G:
+            mean = np.zeros(self.K*self.G_MAX)
+            stdev = np.zeros(self.K*self.G_MAX)
+            lower_ci = np.zeros(self.K*self.G_MAX)
+            upper_ci = np.zeros(self.K*self.G_MAX)
 
-        row = ["k=%d g=%d"%(k,g) for k in range(self.K) for g in range(self.G)]
+            for k in range(self.K):
+                for g in range(self.G_MAX):
+                    rel_ests = estimates[np.nonzero(estimates[:,k*self.G_MAX+g]),k*self.G_MAX+g]
+                    mean[k*self.G_MAX+g] = np.mean(rel_ests)
+                    stdev[k*self.G_MAX+g] = np.std(rel_ests)
+                    lower_ci[k*self.G_MAX+g] = rel_ests[0,int(alpha/2 * len(rel_ests[0]))]
+                    upper_ci[k*self.G_MAX+g] = rel_ests[0,int((1-alpha/2) * len(rel_ests[0]))]
+
+        else:
+            mean = np.mean(estimates, axis=0)
+            stdev = np.std(estimates, axis=0)
+            lower_ci = estimates[int(alpha/2 * self.M),:]
+            upper_ci = estimates[int((1-alpha/2) * self.M),:]
+
+        row = ["k=%d g=%d"%(k,g) for k in range(self.K) for g in range(self.G_MAX)]
         col = ["Lower CI", "Upper CI", "Mean", "St. dev."]
         self.summary = pd.DataFrame(np.vstack((lower_ci,upper_ci,mean,stdev)).T, columns=col, index=row)
 
@@ -271,12 +312,14 @@ class Result:
 def main():
     from estimate import plot_residuals, plot_fitted_values, plot_clusters
 
+    # CHANGED s=100 TO s=25 !!!!!
+
     np.random.seed(0)
     N = 100
-    T = 50
-    G = 3
-    K = 2
-    M = 100
+    T = 10
+    G = 2
+    K = 1
+    M = 20
     filename = "gfe/gfe_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
@@ -289,7 +332,7 @@ def main():
             if not input().upper() == "Y":
                 sys.exit(0)
 
-    # B = np.array([[0.3, 0.9]])
+    B = np.array([[0.3, 0.9]])
     # B = np.array([[0.3, 0.5, 0.8]])
     # B = np.array([[0.1, 2/3], [0.3, 0.6]])
     # B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
@@ -297,7 +340,7 @@ def main():
     # B = np.array([[0.55, 0.65]])
     # B = np.array([[0.4, 0.5, 0.8]])
     # B = np.array([[0.3, 0.4], [0.4, 0.5]])
-    B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
+    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
     col = ['g=%d'%i for i in range(G)]
     row = ['k=%d'%i for i in range(K)]
     slopes_df = pd.DataFrame(B, columns=col, index=row)
@@ -306,15 +349,16 @@ def main():
     TrackTime("Simulate")
     dataset = Dataset(N, T, K, G=G)
     dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk, slopes_df)
+    # dataset.simulate(Effects.gr_tvar_fix, Slopes.heterog, Variance.homosk)
     model = GFE(Slopes.heterog)
 
-    G_MAX = G
-    slopes_ests = np.zeros((M, K, G_MAX))
+    G_max = 7#int(N/12)
+    slopes_ests = np.zeros((M, K, G_max))
     groups_ests = np.zeros((M,N), dtype=int)
     bar_length = 30
     for m in range(M):
         if (m) % 1 == 0:
-            percent = 100.0*m/(M-1)
+            percent = 100.0*m/(max(1,M-1))
             sys.stdout.write("\rExperiment progress: [{:{}}] {:>3}%".format('='*int(percent/(100.0/bar_length)),bar_length, int(percent)))
             sys.stdout.flush()
 
@@ -325,7 +369,11 @@ def main():
         y = dataset.data["y"]
 
         TrackTime("Estimate")
-        model.estimate_G(dataset.G)    #assume true value of G is known
+        # model.estimate_G(dataset.G)    #assume true value of G is known
+        model.estimate_G(G_max, x, y)
+        print("G_hat =",model.G_hat)
+        print(model.BIC)
+        model.set_G(model.G_hat)
         if M == 1:
             model.fit(x,y,verbose=True)
             print("\nTook %d iterations"%model.nr_iterations)
@@ -335,7 +383,7 @@ def main():
             model.fit(x,y,verbose=False)
 
         TrackTime("Save results")
-        slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_MAX-model.G))))
+        slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
         groups_ests[m,:] = model.groups_per_indiv
 
 

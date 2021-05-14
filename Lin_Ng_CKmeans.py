@@ -58,7 +58,7 @@ class CK_means:
                 y = self.Y.values[i*self.T:(i+1)*self.T]
                 # TrackTime("Calculate SSR")
                 for g in range(self.G):
-                    ssr_groups[i,g] = self._ssr(i,g, x, y)
+                    ssr_groups[i,g] = self._ssr(g, x, y)
                 # TrackTime("Select indivs")
 
             # TrackTime("Estimate")
@@ -77,7 +77,7 @@ class CK_means:
         return groups, s
 
 
-    def _ssr(self, i, g, x, y):
+    def _ssr(self, g, x, y):
         residuals = y - x @ self.beta_hat[:,g]
         return residuals@residuals.T
 
@@ -113,8 +113,27 @@ class CK_means:
         self.alpha_hat = pd.DataFrame(self.alpha_hat, columns=col, index=row)
 
 
-    def estimate_G(self, G):
+    def set_G(self, G):
         self.G = G
+
+    def estimate_G(self, G_max, X, Y):
+        BIC_G = np.zeros(G_max)
+        for g in range(G_max):
+            self.set_G(g+1)
+            try:
+                self.fit(X, Y, verbose=False)
+                self.predict(verbose=False)
+                SSR = self.resids.values @ self.resids.values.T
+                NT = self.N*self.T
+                BIC_G[g]  = np.log(SSR/NT) + g*self.K * np.sqrt(min(self.N, self.T)) * np.log(NT) / NT + (g-1) * np.log(self.N**2)/self.N**2
+            except:
+                BIC_G[g] = np.Inf
+
+        self.G_hat = np.argmin(BIC_G)+1
+        col = ['G=%d'%(g+1) for g in range(G_max)]
+        col[self.G_hat-1] = 'G_hat=%d'%self.G_hat
+        self.BIC = pd.DataFrame(BIC_G.reshape(1,-1), columns=col, index=["BIC"])
+
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame, verbose=True):
         if isinstance(Y, pd.DataFrame):
@@ -135,7 +154,7 @@ class CK_means:
 
             tot_ssr = 0
             for i in range(self.N):
-                tot_ssr += self._ssr(i, groups[i], self.X.values[i*self.T:(i+1)*self.T], self.Y.values[i*self.T:(i+1)*self.T])
+                tot_ssr += self._ssr(groups[i], self.X.values[i*self.T:(i+1)*self.T], self.Y.values[i*self.T:(i+1)*self.T])
 
             if tot_ssr < best_tot_ssr:
                 best_tot_ssr = tot_ssr
@@ -163,7 +182,7 @@ class CK_means:
                 print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
 
 
-    def predict(self):
+    def predict(self, verbose=True):
         self.fitted_values = np.zeros_like(self.Y)
 
         X = self.X + self.x_bar
@@ -171,7 +190,8 @@ class CK_means:
         for g in range(self.G):
             selection = np.where(self.groups_per_indiv == g)[0]
             if len(selection) == 0:
-                print("Group %d is empty"%g)
+                if verbose:
+                    print("Group %d out of %d is empty"%(g,self.G))
                 continue
             selection_indices = np.zeros(len(selection)*self.T, dtype=int)
             for i in range(len(selection)):
@@ -195,7 +215,7 @@ def main():
     T = 50
     G = 3
     K = 2
-    M = 100
+    M = 10
     filename = "ckmeans/ckmeans_N=%d_T=%d_G=%d_K=%d_M=%d" %(N,T,G,K,M)
 
     train = 1
@@ -228,13 +248,13 @@ def main():
     dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk, slopes_df)
     model = CK_means()
 
-    G_MAX = G
-    slopes_ests = np.zeros((M, K, G_MAX))
+    G_max = 5#int(N/12)
+    slopes_ests = np.zeros((M, K, G_max))
     groups_ests = np.zeros((M,N), dtype=int)
     bar_length = 30
     for m in range(M):
         if (m) % 1 == 0:
-            percent = 100.0*m/(M-1)
+            percent = 100.0*m/(max(1,M-1))
             sys.stdout.write("\rExperiment progress: [{:{}}] {:>3}%".format('='*int(percent/(100.0/bar_length)),bar_length, int(percent)))
             sys.stdout.flush()
 
@@ -245,7 +265,10 @@ def main():
         y = dataset.data["y"]
 
         TrackTime("Estimate")
-        model.estimate_G(dataset.G)    #assume true value of G is known
+        # model.set_G(dataset.G)    #assume true value of G is known
+        model.estimate_G(G_max, x, y)
+        print("G_hat =",model.G_hat)
+        model.set_G(model.G_hat)
         if M == 1:
             model.fit(x,y,verbose=True)
             print("\nTook %d iterations"%model.nr_iterations)
@@ -255,7 +278,7 @@ def main():
             model.fit(x,y,verbose=False)
 
         TrackTime("Save results")
-        slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_MAX-model.G))))
+        slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
         groups_ests[m,:] = model.groups_per_indiv
 
 
