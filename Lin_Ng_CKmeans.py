@@ -2,19 +2,17 @@
 """
 Created on Mon May 3 17:40:43 2021
 
-@author: Marco
+@author: Marco Deken
 """
 
 import pandas as pd
 import numpy as np
-import os.path
 import sys
-import pickle
 from copy import copy
 from scipy.linalg import lstsq
 
 from simulate import Effects, Slopes, Variance, Dataset, Fit
-from lib.tracktime import TrackTime, TrackReport
+
 
 class CK_means:
     def __init__(self):
@@ -31,7 +29,6 @@ class CK_means:
 
 
     def _calc_beta_hat(self, groups):
-        # TrackTime("_calc_beta_hat")
         for g in range(self.G):
             selection = np.where(groups==g)[0]
 
@@ -43,7 +40,21 @@ class CK_means:
             y = self.Y.values[selection_indices]
 
             self.beta_hat[:,g], _, _, _ = lstsq(x, y)
-        # TrackTime("Estimate")
+
+
+    def _ensure_min_group_size(self, min_group_size, groups):
+        for g in range(self.G):
+            group_size = np.count_nonzero(groups == g)
+            if group_size < min_group_size:
+
+                # Choose 1 member from each group with > 3 members for the small group
+                # Fill group to 3 members from biggest group
+                biggest_group = np.argmax(np.bincount(groups))
+                group_members = np.arange(self.N)[groups == biggest_group]
+                indiv_to_change = np.random.choice(group_members, min_group_size-group_size, replace=False)
+                groups[indiv_to_change] = g
+
+        return groups
 
 
     def _ck_means(self):
@@ -56,15 +67,16 @@ class CK_means:
             for i in range(self.N):
                 x = self.X.values[i*self.T:(i+1)*self.T]
                 y = self.Y.values[i*self.T:(i+1)*self.T]
-                # TrackTime("Calculate SSR")
+
                 for g in range(self.G):
                     ssr_groups[i,g] = self._ssr(g, x, y)
-                # TrackTime("Select indivs")
 
-            # TrackTime("Estimate")
             best_fit = np.min(ssr_groups,axis=1)
             for g in range(self.G):
                 groups[ssr_groups[:,g] == best_fit] = g
+
+            # Make sure each group has at least 3 members
+            groups = self._ensure_min_group_size(3, groups)
 
             self._calc_beta_hat(groups)
 
@@ -116,10 +128,14 @@ class CK_means:
     def set_G(self, G):
         self.G = G
 
-    def estimate_G(self, G_max, X, Y):
+    def estimate_G(self, G_max, X, Y, G_min=1):
         BIC_G = np.zeros(G_max)
         best_bic = np.Inf
         for g in range(G_max):
+            if g+1 < G_min:
+                BIC_G[g] = np.Inf
+                continue
+
             self.set_G(g+1)
             try:
                 self.fit(X, Y, verbose=False)
@@ -198,19 +214,6 @@ class CK_means:
         self._make_dataframes()
 
 
-    def group_similarity(self, true_groups_per_indiv, true_indivs_per_group, verbose=True):
-        # This method only makes sense if G_true == G_hat
-        correctly_grouped_indivs = np.where(self.groups_per_indiv == true_groups_per_indiv)[0]
-        print("%.2f%% of individuals was put in the correct group" %(len(correctly_grouped_indivs)/self.N * 100))
-
-        if verbose:
-            for g in range(self.G):
-                true_g = set(true_indivs_per_group[g])
-                g_hat = set(self.indivs_per_group[g])
-                print("g=%d  \t%d individuals that should be in this group are in a different group" %(g, len(true_g-g_hat)))
-                print("\t\t%d individuals are in this group but should be in a different group" %(len(g_hat-true_g)))
-
-
     def predict(self, verbose=True):
         self.fitted_values = np.zeros_like(self.Y)
 
@@ -235,120 +238,42 @@ class CK_means:
 
 
 
-def main():
-    from estimate import plot_residuals, plot_fitted_values, plot_clusters
-    from Bon_Man import Result
 
+def main():
+    from new_estimate import estimate_model, load_results, continue_estimation
     np.random.seed(0)
+
     N = 100
     T = 50
     G = 2
     K = 1
     M = 10
-    # fit = Fit.groups_known
+
     fit = Fit.G_known
-    # fit = Fit.complete
     var = Variance.homosk
-    # var = Variance.heterosk
-    filename = "gfe/gfe_N=%d_T=%d_G=%d_K=%d_M=%d_fit=%d_e=%d" %(N,T,G,K,M,fit.value,var.value)
+    G_max = G if fit == Fit.G_known else G+4
 
-    train = 1
-    if not train:
-        load_results(filename)
+    train = False
+    overwrite = False
+
+    filename = "ckmeans/ckmeans_N=%d_T=%d_G=%d_K=%d_M=%d_fit=%d_e=%d" %(N,T,G,K,M,fit.value,var.value)
+    if not continue_estimation(filename, fit, train, overwrite, load_results):
         sys.exit(0)
-    else:
-        if os.path.isfile(filename):
-            print(r"THIS FILE ALREADY EXISTS, ARE YOU SURE YOU WANT TO OVERWRITE? Y\N")
-            if not input().upper() == "Y":
-                sys.exit(0)
-
 
     B = np.array([[0.3, 0.9]])
-    # B = np.array([[0.3, 0.5, 0.8]])
-    # B = np.array([[0.1, 2/3], [0.3, 0.6]])
-    # B = np.array([[0.3, 0.5, 0.7], [-0.3, 0.0, 0.3]])
-
-    # B = np.array([[0.55, 0.65]])
-    # B = np.array([[0.4, 0.5, 0.8]])
-    # B = np.array([[0.3, 0.4], [0.4, 0.5]])
-    # B = np.array([[0.4, 0.5, 0.6], [0.2, 0.3, 0.4]])
     col = ['g=%d'%i for i in range(G)]
     row = ['k=%d'%i for i in range(K)]
     slopes_df = pd.DataFrame(B, columns=col, index=row)
 
+    dataset = Dataset(N, T, K, G)
+    dataset.simulate(Effects.ind_fix, Slopes.heterog, var, slopes_df=slopes_df)
 
-    TrackTime("Simulate")
-    dataset = Dataset(N, T, K, G=G)
-    dataset.simulate(Effects.ind_fix, Slopes.heterog, Variance.homosk, slopes_df)
     model = CK_means()
+    model_name = "ckmeans"
 
-    G_max = 5#int(N/12)
-    slopes_ests = np.zeros((M, K, G_max))
-    groups_ests = np.zeros((M,N), dtype=int)
-    bar_length = 30
-    for m in range(M):
-        if (m) % 1 == 0:
-            percent = 100.0*m/(max(1,M-1))
-            sys.stdout.write("\rExperiment progress: [{:{}}] {:>3}%".format('='*int(percent/(100.0/bar_length)),bar_length, int(percent)))
-            sys.stdout.flush()
+    estimate_model(model, dataset, N, T, K, M, G_max, fit, model_name, filename)
 
-        TrackTime("Re-simulate")
-        dataset.re_simulate()
-
-        x = dataset.data.drop(["y"], axis=1)
-        y = dataset.data["y"]
-
-        TrackTime("Estimate")
-        if fit == Fit.groups_known:
-            # ASSUME TRUE GROUP MEMBERSHIP IS KNOWN
-            model.fit_given_groups(x, y, dataset.groups_per_indiv, first_fit=True, verbose=False)
-
-        elif fit == Fit.G_known:
-            # ASSUME TRUE VALUE OF G IS KNOWN
-            model.set_G(dataset.G)
-            model.fit(x,y,verbose=False)
-
-        elif fit == Fit.complete:
-            # ESTIMATE EVERYTHING
-            best_groups = model.estimate_G(G_max, x, y)
-            model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
-            print(" G_hat =",model.G_hat) if model.G_hat != dataset.G else None
-
-        TrackTime("Save results")
-        slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
-        groups_ests[m,:] = model.groups_per_indiv
-
-
-    TrackTime("Results")
-    result = Result(dataset.slopes_df, slopes_ests, dataset.groups_per_indiv, groups_ests)
-
-    with open(filename, 'wb') as output:
-        pickle.dump(result, output, pickle.HIGHEST_PROTOCOL)
-
-    load_results(filename)
-
-    print("\n")
-    TrackReport()
-
-
-
-def load_results(filename):
-    if os.path.isfile(filename):
-        with open(filename, 'rb') as output:
-            result = pickle.load(output)
-
-    print("\n\nTRUE COEFFICIENTS:")
-    print(result.slopes_true)
-
-    result.RMSE()
-    print("\nRMSE: %.4f\n" %(result.RMSE*100))
-
-    result.confusion_mat_groups()
-    print(result.conf_mat, "\n")
-
-    result.conf_interval(0.05)
-    print(result.summary)
-
+    load_results(filename, fit)
 
 
 if __name__ == "__main__":
