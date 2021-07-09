@@ -2,7 +2,7 @@
 """
 Created on Tue Jun  8 20:26:36 2021
 
-@author: Marco
+@author: Marco Deken
 """
 import pandas as pd
 import numpy as np
@@ -102,6 +102,7 @@ def estimate_model(model, dataset, N, T, K, M, G_max, fit, model_name, filename,
     else:
         alphas_ests = np.zeros((M, N))
     G_hats = np.zeros(M, dtype=int)
+
     bar_length = 30
     for m in range(M):
         if (m) % 1 == 0:
@@ -122,23 +123,11 @@ def estimate_model(model, dataset, N, T, K, M, G_max, fit, model_name, filename,
             # ASSUME TRUE VALUE OF G IS KNOWN
             model.set_G(dataset.G)
             model.fit(x,y,verbose=False)
-            
-            # model.predict()
-            # if heterosk_test(model.resids, x, alpha=0.05, verbose=False):
-            #     x_const = sm.tools.tools.add_constant(x)
-            #     p, _, _, _ = lstsq(x_const, np.log(model.resids**2))
-            #     h_it = np.sqrt(np.exp((x_const @ p).values))
-            #     # print(h_it.mean())
-            #     x /= h_it
-            #     y /= h_it.reshape(len(y))
-            #     model.fit(x,y,verbose=False)
-                # print(""), model.predict(), heterosk_test(model.resids, x, alpha=0.05, verbose=True)
 
         elif fit == Fit.complete:
             # ESTIMATE EVERYTHING
             best_groups = model.estimate_G(G_max, x, y, G_min)
             model.fit_given_groups(x, y, best_groups, first_fit=False, verbose=False)
-            # print(" G_hat =",model.G_hat) if model.G_hat != dataset.G else None
             G_hats[m] = model.G_hat
 
         slopes_ests[m,:,:] = np.hstack((model.beta_hat.values,np.zeros((K, G_max-model.G))))
@@ -148,7 +137,7 @@ def estimate_model(model, dataset, N, T, K, M, G_max, fit, model_name, filename,
         else:
             alphas_ests[m,:] = model.alpha_hat.values.reshape(model.N)
 
-    #Preparing fixed effects for calculation of RMSE
+    # Preparing fixed effects for calculation of RMSE in Result()
     alphas_ests_m = np.zeros((M, N, T))
     alphas_true_m = np.zeros((N, T))
     for i in range(N):
@@ -156,12 +145,11 @@ def estimate_model(model, dataset, N, T, K, M, G_max, fit, model_name, filename,
         for m in range(M):
             alphas_ests_m[m,i,:] = (alphas_ests[m,:,groups_ests[m,i]] if model_name == "gfe" else alphas_ests[m,i])
 
-
+    # Initialize Result object to save the results
     result = Result(dataset.slopes_df, slopes_ests, dataset.groups_per_indiv, groups_ests, alphas_ests_m, alphas_true_m, G_hats)
 
     with open(filename, 'wb') as output:
         pickle.dump(result, output, pickle.HIGHEST_PROTOCOL)
-
 
 
 
@@ -187,9 +175,9 @@ def main():
     slopes_df = pd.DataFrame(B, columns=col, index=row)
 
 
-    select = [0, 1, 2]  #gfe ; ckmeans ; pseudo
-    train = 1
-    overwrite = 0
+    select = [0,1,2]  #gfe ; ckmeans ; pseudo
+    train = True
+    overwrite = False
 
     N_range = [50, 100, 200]
     T_range = [5, 10, 20, 50, 100]
@@ -203,15 +191,7 @@ def main():
                 print("\n"+model_name.upper())
 
                 if not continue_estimation(filename, fit, train, overwrite, load_results):
-                        sys.exit(0)
-                # if not train and os.path.isfile(filename):
-                #     load_results(filename)
-                #     continue
-                # else:
-                #     if os.path.isfile(filename) and not overwrite:
-                #         print(r"THIS FILE ALREADY EXISTS, ARE YOU SURE YOU WANT TO OVERWRITE? Y\N")
-                #         if not input().upper() == "Y":
-                #             sys.exit(0)
+                    sys.exit(0)
 
                 if model_name == "gfe":
                     model = GFE(Slopes.heterog)
@@ -269,7 +249,6 @@ def continue_estimation(filename, fit, train, overwrite, load_results):
                 return False
 
     return True
-
 
 
 
