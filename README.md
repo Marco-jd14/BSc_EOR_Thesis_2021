@@ -1,4 +1,4 @@
-# thesis
+# Python programming code for the bachelor thesis of Marco Deken, Vrije Universiteit Amsterdam, 9 July 2021
 Simulating and Estimating (Grouped) Panel Data
 
 This repository is split up into 6 main files with functionality:
