@@ -12,11 +12,6 @@ import pickle
 import matplotlib.pyplot as plt
 
 from simulate import Effects, Slopes, Variance, Dataset, Fit
-from lib.tracktime import TrackTime, TrackReport
-from Bon_Man import GFE
-from Lin_Ng_PSEUDO import PSEUDO
-from Lin_Ng_CKmeans import CK_means
-
 
 
 class Result:
@@ -155,6 +150,10 @@ def estimate_model(model, dataset, N, T, K, M, G_max, fit, model_name, filename,
 
 
 def main():
+    from lib.tracktime import TrackTime, TrackReport
+    from Bon_Man_GFE import GFE
+    from Lin_Ng_PSEUDO import PSEUDO
+    from Lin_Ng_CKmeans import CK_means
     np.random.seed(0)
 
     model_names = ["gfe", "ckmeans", "pseudo"]
