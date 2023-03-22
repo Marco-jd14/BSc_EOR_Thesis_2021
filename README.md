@@ -2,6 +2,7 @@
 Simulating and Estimating (Grouped) Panel Data
 
 This repository is split up into 6 main files with functionality:
+
     #1: simulate.py
         This file holds the class Simulate, with which it is possible to simulate panel data with
         different forms of fixed effects, different forms of slope parameters, or different forms
